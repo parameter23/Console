@@ -1,0 +1,12 @@
+CompileFlags:
+  Add: [
+    "-Iinclude",
+    "-Isrc",
+    "-Ilibopencm3/include",
+    "-ffreestanding",
+    "-fno-builtin",
+    "-nostdlib",
+  ]
+
+Diagnostics:
+  Suppress: ["missing-system-header"]

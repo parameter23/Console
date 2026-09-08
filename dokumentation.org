@@ -1,0 +1,738 @@
+#+TITLE: STM32F411 Game Platform – Entwicklerhandbuch
+#+AUTHOR: parameter23
+#+OPTIONS: toc:3 num:nil
+
+* Einleitung
+Dieses Dokument beschreibt die Architektur, Pinbelegung und Funktionsweise
+der STM32F411‑basierten Game‑Plattform.
+Es dient als Entwicklerhandbuch für Wartung, Erweiterung und Debugging.
+
+* Pinbelegung (STM32F411)
+** Übersicht
+| Funktion        | Pin  | Richtung | Peripherie | Beschreibung        |
+|-----------------+------+----------+------------+---------------------|
+| ST7789 CS       | PA4  | Output   | GPIO       | Chip Select LCD     |
+| ST7789 DC       | PA3  | Output   | GPIO       | Data/Command        |
+| ST7789 RESET    | PA2  | Output   | GPIO       | Display Reset       |
+| ST7789 SPI SCK  | PA5  | AF5      | SPI1       | Display Clock       |
+| ST7789 SPI MOSI | PA7  | AF5      | SPI1       | Display Data        |
+| Audio PWM Out   | PA6  | AF2      | TIM3_CH1   | PWM‑Audio           |
+| Joystick UP     | PB0  | Input    | GPIO       | Pull‑Up             |
+| Joystick DOWN   | PB1  | Input    | GPIO       | Pull‑Up             |
+| Joystick LEFT   | PB13 | Input    | GPIO       | Pull‑Up             |
+| Joystick RIGHT  | PB10 | Input    | GPIO       | Pull‑Up             |
+| Joystick BUTTON | PB12 | Input    | GPIO       | Pull‑Up             |
+| Joystick ADC X  | PA0  | Analog   | ADC1_IN0   | X‑Achse             |
+| Joystick ADC Y  | PA1  | Analog   | ADC1_IN1   | Y‑Achse             |
+| SD-Card CS      | PB5  | Output   | GPIO       | Chip Select SC-Card |
+
+** Hinweise
+- Alle Display‑Pins liegen auf Port A → schnelle GPIO‑Zugriffe.
+- Audio‑PWM (PA6) nutzt TIM3_CH1 → APB1‑Timer (verdoppelte Clock).
+- Joystick‑Buttons sind *active low* (Pull‑Ups).
+- ADC‑Kanäle nutzen 12‑Bit‑Auflösung.
+
+* Systemstart & Clocking
+** clock_setup()
+Initialisiert den Systemtakt auf 100 MHz.
+
+- Aktiviert HSE (25 MHz)
+- Setzt AHB = /1, APB1 = /2, APB2 = /1
+- Konfiguriert PLL:
+  - PLLM = 25
+  - PLLN = 200
+  - PLLP = 2 → 100 MHz SYSCLK
+  - PLLQ = 4 → 50 MHz USB/SDIO
+- Setzt Flash‑Waitstates (3 WS)
+- Schaltet auf PLL um
+- Aktualisiert Frequenzvariablen:
+  - rcc_ahb_frequency = 100 MHz
+  - rcc_apb1_frequency = 50 MHz
+  - rcc_apb2_frequency = 100 MHz
+
+** systick_setup()
+Konfiguriert SysTick auf 1 ms‑Ticks.
+
+- Reload = 100000‑1
+- Clocksource = AHB
+- Interrupts aktiv
+
+** sys_tick_handler()
+Wird jede Millisekunde aufgerufen.
+
+- erhöht =ms_ticks=
+- ruft =sfx_update_1ms()= auf → Audio läuft non‑blocking
+
+** millis()
+Gibt die aktuelle Millisekunden‑Zeit zurück.
+
+** delay_ms(ms)
+Busy‑wait Delay.
+Wird im Displaytreiber genutzt (Reset‑Sequenz).
+
+* Non‑Blocking SFX‑Engine
+** Überblick
+Die SFX‑Engine erzeugt Töne über TIM3/PA6 im PWM‑Modus.
+Sie ist vollständig non‑blocking und wird über SysTick gesteuert.
+
+** sfx_init()
+Initialisiert TIM3 für PWM‑Audio.
+
+- Aktiviert TIM3 und GPIOA
+- Konfiguriert PA6 als AF2
+- Timer‑Clock = APB1 × 2 = 100 MHz
+- Prescaler so gewählt, dass Timer‑Tick = 1 MHz
+- Startperiode = 1 kHz
+- PWM‑Modus aktiviert
+- Duty‑Cycle = 0 (stumm)
+
+** sfx_update_1ms()
+Wird jede Millisekunde aufgerufen.
+
+- verwaltet Restlaufzeit
+- stoppt Effekt automatisch
+- führt Effektlogik aus:
+  - LASER: Sweep nach oben
+  - EXPLOSION: Pseudo‑Zufallsfrequenzen
+  - NOISE_SHORT: schnelles Rauschen
+
+** sfx_play(type)
+Startet einen Effekt.
+
+- setzt Startfrequenz
+- setzt Duty‑Cycle
+- setzt Laufzeit
+- initialisiert =sfx_param=
+
+** sfx_stop()
+Stoppt Audioausgabe.
+
+* Framebuffer‑System (4‑Bit)
+** fb4_clear(color)
+Füllt den gesamten Framebuffer.
+
+** fb4_set_pixel(x,y,color)
+Setzt ein Pixel (4‑Bit).
+
+** fb4_get_pixel(x,y)
+Liest ein Pixel.
+
+** fb4_flush()
+Sendet den Framebuffer per SPI an das Display (ohne DMA).
+
+** fb4_flush_dma()
+DMA‑basierte Variante, schneller.
+
+** fb4_fill_rect(x,y,w,h,color)
+Zeichnet ein Rechteck.
+
+* ST7789 Displaytreiber
+** st7789_init()
+Initialisiert das Display:
+
+- Reset‑Sequenz
+- Farbformat
+- Timing‑Parameter
+- Display ON
+
+** st7789_set_window()
+Setzt den Zeichenbereich.
+
+** st7789_draw_pixel()
+Zeichnet ein einzelnes Pixel.
+
+** st7789_fill_rect()
+Füllt einen Bereich mit einer Farbe.
+
+* SPI‑Abstraktion
+** spi_setup()
+Initialisiert SPI1:
+
+- Master
+- 8‑Bit
+- MSB‑first
+- Baudrate = fPCLK/2
+
+** spi_write8()
+Sendet ein Byte und liest Dummy‑Byte zurück.
+
+* Joystick‑Subsystem
+** joystick_init()
+Konfiguriert:
+
+- GPIOB als Input mit Pull‑Ups
+- PA0/PA1 als Analog
+- ADC1 mit 144‑Cycle Sample Time
+
+** joystick_update()
+Liest:
+
+- digitale Buttons
+- pressed / released / repeat
+- analoge Achsen (ADC)
+
+** joystick_get_adc_x(), joystick_get_adc_y()
+Geben die letzten ADC‑Werte zurück.
+
+* Text‑Rendering
+** draw_char_fb_trans()
+Zeichnet Zeichen ohne Hintergrund.
+
+** draw_text_fb_trans()
+Zeichnet Text ohne Hintergrund.
+
+** draw_char_fb()
+Zeichnet Zeichen mit Hintergrund.
+
+** draw_text_fb()
+Zeichnet Text mit Hintergrund.
+
+** draw_char(), draw_text()
+Direktes Rendering auf ST7789 (ohne Framebuffer).
+
+* Sprite‑Rendering
+** sprite4_draw()
+Zeichnet Sprite ohne Transparenz.
+
+** sprite4_draw_trans()
+Zeichnet Sprite mit Transparenzfarbe.
+
+* Diagnostic‑Module
+** joystick_draw_diag()
+Zeigt Joystick‑Status im Framebuffer an.
+
+* Main‑Loop‑Integration
+** Ablauf
+1. Clock & SysTick
+2. Display‑GPIO
+3. SPI
+4. Display init
+5. Framebuffer init
+6. Joystick init
+7. SFX init
+8. Endlosschleife
+
+** Testschleife für Audio
+Alle 500 ms wird ein anderer Effekt abgespielt:
+
+- BEEP
+- LASER
+- EXPLOSION
+- NOISE_SHORT
+
+Audio läuft vollständig non‑blocking.
+
+* Erweiterungsmöglichkeiten
+- Game‑Boy‑ähnliche 4‑Kanal‑Soundengine
+- Tilemap‑Renderer
+- DMA‑basierter Sprite‑Blitter
+- Musik‑Sequencer
+- Interrupt‑gesteuerte Input‑Engine
+
+* Schlusswort
+Dieses Dokument beschreibt die komplette Architektur deiner STM32‑Game‑Plattform.
+Es dient als Grundlage für Erweiterungen, Debugging und langfristige Wartbarkeit.
+
+* Detaillierte Beschreibung des Framebuffer‑Systems (4‑Bit Packed)
+
+Das Framebuffer‑Subsystem bildet die zentrale Rendering‑Pipeline der Plattform.
+Es ermöglicht schnelles, speichereffizientes Zeichnen in 4‑Bit‑Farbtiefe
+(16 Farben), bevor der Inhalt per SPI oder DMA an das ST7789‑Display übertragen wird.
+
+** Grundprinzip
+Der Framebuffer ist ein 320×240‑Pixel‑Bildspeicher, der in einem kompakten
+4‑Bit‑Format abgelegt wird:
+
+- *2 Pixel pro Byte*
+- *oberes Nibble = Pixel links*
+- *unteres Nibble = Pixel rechts*
+
+Dies halbiert den Speicherbedarf gegenüber 8‑Bit‑Farben und ermöglicht
+schnelles Zeichnen auf einem Mikrocontroller ohne Cache.
+
+** Speicherlayout
+#+BEGIN_SRC text
+Byte 0: [P0 | P1]
+Byte 1: [P2 | P3]
+Byte 2: [P4 | P5]
+...
+#+END_SRC
+
+Die Pixel werden zeilenweise gespeichert:
+
+#+BEGIN_SRC text
+Index = (y * FB4_WIDTH + x) >> 1
+odd   = x & 1
+#+END_SRC
+
+- Wenn =odd == 0= → Pixel liegt im *oberen* Nibble
+- Wenn =odd == 1= → Pixel liegt im *unteren* Nibble
+
+** Farbpalette (16 Farben, RGB565)
+Die 4‑Bit‑Farben sind Indizes in eine 16‑Einträge‑Palette:
+
+#+BEGIN_SRC c
+static const uint16_t fb4_default_palette[16] = {
+    0x0000, 0xFFFF, 0xF800, 0x07E0,
+    0x001F, 0xFFE0, 0xF81F, 0x07FF,
+    0x8410, 0x4208, 0xFC00, 0x83E0,
+    0x7BEF, 0xA145, 0xFD20, 0xFFFF
+};
+#+END_SRC
+
+Diese Palette wird beim Start nach =fb4_palette= kopiert und kann zur Laufzeit
+angepasst werden.
+
+** Funktionen im Detail
+
+*** fb4_clear(color)
+Füllt den gesamten Framebuffer mit einer Farbe.
+
+- setzt beide Nibbles eines Bytes auf denselben Wert
+- extrem schnell, da nur ein Byte‑Wert geschrieben wird
+
+*** fb4_set_pixel(x, y, color)
+Setzt ein einzelnes Pixel.
+
+Algorithmus:
+
+1. Koordinaten prüfen
+2. Byte‑Index berechnen
+3. Nibble auswählen
+4. Nibble maskieren und neues Pixel einsetzen
+
+#+BEGIN_SRC c
+if (odd)
+    framebuffer4[index] = (old & 0xF0) | (color & 0x0F);
+else
+    framebuffer4[index] = (old & 0x0F) | (color << 4);
+#+END_SRC
+
+*** fb4_get_pixel(x, y)
+Liest ein Pixel aus dem Framebuffer.
+
+- extrahiert das entsprechende Nibble
+- gibt 4‑Bit‑Farbindex zurück
+
+*** fb4_fill_rect(x, y, w, h, color)
+Zeichnet ein Rechteck.
+
+- nutzt intern =fb4_set_pixel=
+- nicht die schnellste Methode, aber flexibel
+- ideal für UI‑Elemente, Hintergründe, Debug‑Overlays
+
+*** fb4_flush()
+Überträgt den Framebuffer *ohne DMA* an das Display.
+
+Ablauf:
+
+1. Fenster auf volle Displaygröße setzen
+2. Für jedes Byte:
+   - oberes Nibble → Palette → RGB565 → SPI senden
+   - unteres Nibble → Palette → RGB565 → SPI senden
+
+Dies ist die einfachste, aber nicht die schnellste Variante.
+
+*** fb4_flush_dma()
+DMA‑basierte Übertragung, deutlich schneller.
+
+Ablauf:
+
+1. DMA2 Stream3 für SPI1 konfigurieren
+2. Jede Zeile in einen temporären 8‑Bit‑RGB565‑Buffer konvertieren
+3. DMA‑Transfer starten
+4. Auf Transfer‑Complete warten
+5. Nächste Zeile senden
+
+Vorteile:
+
+- CPU wird entlastet
+- konstante Übertragungszeit pro Zeile
+- ideal für Spiele oder Animationen
+
+** Performance‑Überlegungen
+- 4‑Bit‑Framebuffer halbiert den Speicherbedarf → schnelleres Zeichnen
+- DMA‑Flush ist ~3–4× schneller als SPI‑Flush
+- Pixel‑Setzen ist O(1), aber bit‑masking kostet etwas Zeit
+- Rechtecke sind effizient, da sie nur Pixel‑Writes wiederholen
+- Vollbild‑Flush ist der teuerste Schritt (ca. 320×240×2 Bytes)
+
+** Typische Fehlerquellen
+- Vergessen, die Palette zu initialisieren → falsche Farben
+- Out‑of‑Bounds‑Zugriffe bei =fb4_set_pixel=
+- Displayfenster nicht korrekt gesetzt → verzerrte Ausgabe
+- SPI nicht im 8‑Bit‑Modus → Farbstörungen
+- DMA‑Stream nicht zurückgesetzt → keine Ausgabe
+
+** Best Practices
+- Für UI‑Elemente: =fb4_fill_rect=
+- Für Text: =draw_text_fb_trans= (spart Hintergrund)
+- Für Sprites: =sprite4_draw_trans=
+- Für Animationen: immer =fb4_flush_dma()= verwenden
+- Palette zur Laufzeit anpassen für Effekte (z. B. Fade‑Out)
+
+** Beispiel: Pixel setzen
+#+BEGIN_SRC c
+fb4_set_pixel(10, 20, 3);   // grünes Pixel
+#+END_SRC
+
+** Beispiel: Vollbild löschen
+#+BEGIN_SRC c
+fb4_clear(0);   // schwarz
+#+END_SRC
+
+** Beispiel: Framebuffer anzeigen
+#+BEGIN_SRC c
+fb4_flush_dma();
+#+END_SRC
+
+
+
+
+* Detaillierte Beschreibung der Sprite‑Engine (4‑Bit Packed)
+
+Die Sprite‑Engine ermöglicht das Zeichnen kleiner, rechteckiger Grafiken
+(Sprites) auf den 4‑Bit‑Framebuffer.
+Sie ist bewusst minimalistisch gehalten, aber effizient und flexibel genug
+für UI‑Elemente, Icons, Gegner, Spielerfiguren oder Partikeleffekte.
+
+** Grundprinzip
+Ein Sprite besteht aus:
+
+- einer festen Breite (in Pixeln)
+- einer festen Höhe (in Pixeln)
+- einem Zeiger auf 4‑Bit‑packed Pixeldaten
+
+Das Format entspricht exakt dem Framebuffer‑Format:
+
+- *2 Pixel pro Byte*
+- oberes Nibble = Pixel links
+- unteres Nibble = Pixel rechts
+
+Dies ermöglicht schnelles Kopieren ohne Konvertierung.
+
+** Sprite‑Datenstruktur
+#+BEGIN_SRC c
+typedef struct {
+    uint8_t width;
+    uint8_t height;
+    const uint8_t *data;   // 4-bit packed
+} Sprite4;
+#+END_SRC
+
+Die Daten werden zeilenweise gespeichert:
+
+#+BEGIN_SRC text
+Byte 0: [P0 | P1]
+Byte 1: [P2 | P3]
+Byte 2: [P4 | P5]
+...
+#+END_SRC
+
+** Beispiel: 8×8‑Sprite
+#+BEGIN_SRC c
+static const uint8_t sprite_test_data[] = {
+    0x11,0x11,0x11,0x11,
+    0x12,0x22,0x22,0x21,
+    0x12,0x22,0x22,0x21,
+    0x12,0x22,0x22,0x21,
+    0x12,0x22,0x22,0x21,
+    0x12,0x22,0x22,0x21,
+    0x12,0x22,0x22,0x21,
+    0x11,0x11,0x11,0x11
+};
+#+END_SRC
+
+** Funktionen im Detail
+
+*** sprite4_draw(x, y, spr)
+Zeichnet ein Sprite *ohne Transparenz*.
+
+Algorithmus:
+
+1. =idx= zählt Pixel im Sprite
+2. Für jedes Pixel:
+   - Byte = spr->data[idx >> 1]
+   - Farbe = oberes oder unteres Nibble
+3. Pixel wird direkt in den Framebuffer geschrieben
+
+#+BEGIN_SRC c
+uint8_t packed = spr->data[idx >> 1];
+uint8_t color  = (idx & 1) ? (packed & 0x0F) : (packed >> 4);
+fb4_set_pixel(x + px, y + py, color);
+#+END_SRC
+
+Eigenschaften:
+
+- einfach
+- schnell
+- überschreibt immer den Hintergrund
+
+Ideal für:
+
+- UI‑Elemente
+- Tiles
+- Icons
+
+*** sprite4_draw_trans(x, y, spr, transparent)
+Zeichnet ein Sprite *mit Transparenzfarbe*.
+
+Algorithmus:
+
+1. Pixel extrahieren wie oben
+2. Wenn Pixel != transparent → zeichnen
+3. Sonst → Hintergrund bleibt erhalten
+
+#+BEGIN_SRC c
+if (color != transparent)
+    fb4_set_pixel(x + px, y + py, color);
+#+END_SRC
+
+Ideal für:
+
+- Spielfiguren
+- Gegner
+- Partikel
+- Overlays
+
+** Performance‑Überlegungen
+- Sprites sind klein → O(width×height)
+- Kein DMA beim Zeichnen → CPU‑basiert
+- Transparenz kostet zusätzliche Vergleiche
+- Packed‑Format spart Speicher, aber erfordert Bit‑Operationen
+
+** Typische Fehlerquellen
+- Falsches Packed‑Format (Nibble vertauscht)
+- Sprite außerhalb des Bildschirms → Clipping fehlt bewusst
+- Transparenzfarbe falsch gewählt
+- Spritebreite ungerade → Daten müssen exakt passen
+
+** Best Practices
+- Sprites möglichst klein halten (8×8, 16×16)
+- Transparenzfarbe = 0 (schwarz) oder 15 (weiß) für Klarheit
+- Für Animationen: mehrere Sprite‑Frames im Flash ablegen
+- Für große Grafiken: lieber =fb4_fill_rect= oder Tile‑Renderer nutzen
+- Clipping bei Bedarf im Aufrufer implementieren
+
+** Beispiel: Sprite zeichnen
+#+BEGIN_SRC c
+sprite4_draw(100, 50, &sprite_test);
+#+END_SRC
+
+** Beispiel: Sprite mit Transparenz
+#+BEGIN_SRC c
+sprite4_draw_trans(100, 50, &sprite_test, 0);   // 0 = transparent
+#+END_SRC
+
+** Erweiterungsmöglichkeiten
+- Clipping (automatisch oder optional)
+- Rotation / Flip (horizontal/vertikal)
+- Scaling (nearest neighbor)
+- Sprite‑Sheets (Tile‑Indexing)
+- Hardware‑beschleunigtes Blitting (DMA2D auf F4‑Geräten)
+- Z‑Layering / Prioritäten
+- Animationstimer
+
+  * Sprite‑Animationen (Frame‑basierte Animationen)
+
+Sprite‑Animationen erweitern die bestehende Sprite‑Engine um die Fähigkeit,
+mehrere Frames eines Sprites nacheinander abzuspielen.
+Dies ist ideal für:
+
+- Laufanimationen
+- Explosionen
+- UI‑Effekte
+- Gegnerbewegungen
+- Partikel
+
+** Grundprinzip
+Eine Animation besteht aus:
+
+- einer Liste von Sprite‑Frames
+- einer Frame‑Dauer (in Millisekunden)
+- einem aktuellen Frame‑Index
+- einem Timer, der im SysTick herunterzählt
+- einer Loop‑Option (repeat / einmalig)
+
+** Datenstruktur
+#+BEGIN_SRC c
+typedef struct {
+    const Sprite4 **frames;   // Array von Sprite-Pointern
+    uint8_t frame_count;      // Anzahl Frames
+    uint8_t current_frame;    // aktueller Frame
+    uint16_t frame_time_ms;   // Dauer pro Frame
+    uint16_t timer;           // Countdown
+    uint8_t loop;             // 1 = wiederholen
+} SpriteAnim;
+#+END_SRC
+
+** Ablauf
+1. =timer= wird im SysTick heruntergezählt
+2. Wenn =timer == 0=:
+   - =current_frame++=
+   - bei Ende:
+     - wenn loop → zurück zu 0
+     - sonst → Animation endet
+3. Beim Zeichnen wird immer =frames[current_frame]= verwendet
+
+** Beispiel: Animation initialisieren
+#+BEGIN_SRC c
+static const Sprite4 *walk_frames[] = {
+    &sprite_walk1,
+    &sprite_walk2,
+    &sprite_walk3,
+    &sprite_walk4
+};
+
+SpriteAnim walk_anim = {
+    .frames = walk_frames,
+    .frame_count = 4,
+    .current_frame = 0,
+    .frame_time_ms = 120,
+    .timer = 120,
+    .loop = 1
+};
+#+END_SRC
+
+** Update‑Funktion (im SysTick)
+#+BEGIN_SRC c
+void sprite_anim_update(SpriteAnim *a)
+{
+    if (a->frame_count <= 1) return;
+
+    if (a->timer > 0) {
+        a->timer--;
+        return;
+    }
+
+    a->timer = a->frame_time_ms;
+
+    a->current_frame++;
+
+    if (a->current_frame >= a->frame_count) {
+        if (a->loop)
+            a->current_frame = 0;
+        else
+            a->current_frame = a->frame_count - 1;
+    }
+}
+#+END_SRC
+
+** Zeichnen der Animation
+#+BEGIN_SRC c
+sprite4_draw_trans(x, y, a->frames[a->current_frame], transparent);
+#+END_SRC
+
+** Best Practices
+- Framegrößen sollten identisch sein
+- Transparenzfarbe konsequent verwenden
+- Frame‑Dauer nicht zu kurz wählen (60–150 ms ideal)
+- Animationen im SysTick aktualisieren
+
+---
+
+* Tilemaps (Kachel‑basierte Hintergründe)
+
+Tilemaps ermöglichen das effiziente Zeichnen großer Hintergründe oder Levels,
+ohne jedes Pixel einzeln zu setzen.
+Sie bestehen aus:
+
+- einer Kachelbibliothek (Tileset)
+- einer 2D‑Matrix von Tile‑Indizes
+- optional: mehreren Layern
+
+** Grundprinzip
+Ein Tile ist ein kleines Sprite, typischerweise:
+
+- 8×8 Pixel
+- 16×16 Pixel
+
+Eine Tilemap ist ein Raster aus Tile‑IDs:
+
+#+BEGIN_SRC text
+[ 1 1 1 1 1 1 1 1 ]
+[ 1 2 2 2 2 2 2 1 ]
+[ 1 2 3 3 3 3 2 1 ]
+[ 1 2 3 4 4 3 2 1 ]
+#+END_SRC
+
+** Datenstruktur
+#+BEGIN_SRC c
+typedef struct {
+    const Sprite4 **tiles;   // Array aller Tiles
+    uint16_t width;          // Anzahl Tiles horizontal
+    uint16_t height;         // Anzahl Tiles vertikal
+    const uint16_t *map;     // Tile-IDs (width*height)
+} Tilemap;
+#+END_SRC
+
+** Zeichnen der Tilemap
+#+BEGIN_SRC c
+void tilemap_draw(const Tilemap *tm, int x0, int y0)
+{
+    int idx = 0;
+
+    for (int ty = 0; ty < tm->height; ty++) {
+        for (int tx = 0; tx < tm->width; tx++) {
+
+            uint16_t tile_id = tm->map[idx++];
+            const Sprite4 *spr = tm->tiles[tile_id];
+
+            sprite4_draw(x0 + tx * spr->width,
+                         y0 + ty * spr->height,
+                         spr);
+        }
+    }
+}
+#+END_SRC
+
+** Beispiel: Tileset definieren
+#+BEGIN_SRC c
+const Sprite4 *tileset[] = {
+    &tile_grass,
+    &tile_dirt,
+    &tile_water,
+    &tile_stone
+};
+#+END_SRC
+
+** Beispiel: Tilemap definieren
+#+BEGIN_SRC c
+static const uint16_t level1_map[] = {
+    0,0,0,0,0,0,0,0,
+    0,1,1,1,1,1,1,0,
+    0,1,2,2,2,2,1,0,
+    0,1,2,3,3,2,1,0
+};
+
+Tilemap level1 = {
+    .tiles = tileset,
+    .width = 8,
+    .height = 4,
+    .map = level1_map
+};
+#+END_SRC
+
+** Tilemap zeichnen
+#+BEGIN_SRC c
+tilemap_draw(&level1, 0, 0);
+#+END_SRC
+
+** Scrolling (optional)
+Für horizontales/vertikales Scrolling:
+
+- x0/y0 verschieben
+- nur sichtbare Tiles zeichnen
+- Clipping im Aufrufer implementieren
+
+** Performance‑Hinweise
+- Tilemaps sind extrem schnell, da sie nur Sprites zeichnen
+- Ideal für Hintergründe, Levels, UI‑Panels
+- Große Maps können in Abschnitte (Chunks) geteilt werden
+
+** Erweiterungsmöglichkeiten
+- mehrere Layer (z. B. Hintergrund + Vordergrund)
+- Tile‑Animationen (z. B. Wasser)
+- Kollisionserkennung über Tile‑IDs
+- Auto‑Tiling (Kanten automatisch setzen)
+- Tile‑Scrolling mit Subpixel‑Offsets

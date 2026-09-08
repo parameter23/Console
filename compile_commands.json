@@ -1,0 +1,58 @@
+[
+  {
+    "arguments": [
+      "/usr/bin/arm-none-eabi-gcc",
+      "-Iinclude",
+      "-Isrc",
+      "-ffreestanding",
+      "-fno-builtin",
+      "-O2",
+      "-Wall",
+      "-Wextra",
+      "-DSTM32F4",
+      "-DSTM32F411CE",
+      "-Ilibopencm3/include",
+      "-DSTM32F4",
+      "-DSTM32F411xE",
+      "-mcpu=cortex-m4",
+      "-mthumb",
+      "-mfloat-abi=hard",
+      "-mfpu=fpv4-sp-d16",
+      "-c",
+      "-o",
+      "src/clock.o",
+      "src/clock.c"
+    ],
+    "directory": "/home/klaus/ARM/Projekte/stm32_template",
+    "file": "/home/klaus/ARM/Projekte/stm32_template/src/clock.c",
+    "output": "/home/klaus/ARM/Projekte/stm32_template/src/clock.o"
+  },
+  {
+    "arguments": [
+      "/usr/bin/arm-none-eabi-gcc",
+      "-Iinclude",
+      "-Isrc",
+      "-ffreestanding",
+      "-fno-builtin",
+      "-O2",
+      "-Wall",
+      "-Wextra",
+      "-DSTM32F4",
+      "-DSTM32F411CE",
+      "-Ilibopencm3/include",
+      "-DSTM32F4",
+      "-DSTM32F411xE",
+      "-mcpu=cortex-m4",
+      "-mthumb",
+      "-mfloat-abi=hard",
+      "-mfpu=fpv4-sp-d16",
+      "-c",
+      "-o",
+      "src/main.o",
+      "src/main.c"
+    ],
+    "directory": "/home/klaus/ARM/Projekte/stm32_template",
+    "file": "/home/klaus/ARM/Projekte/stm32_template/src/main.c",
+    "output": "/home/klaus/ARM/Projekte/stm32_template/src/main.o"
+  }
+]
