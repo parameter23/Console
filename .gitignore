@@ -5,3 +5,4 @@ ld/
 firmware.elf
 firmware.bin
 generated.*.ld
+token

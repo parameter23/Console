@@ -5,734 +5,429 @@
 * Einleitung
 Dieses Dokument beschreibt die Architektur, Pinbelegung und Funktionsweise
 der STM32F411‑basierten Game‑Plattform.
-Es dient als Entwicklerhandbuch für Wartung, Erweiterung und Debugging.
+
+Das Projekt gliedert sich in zwei Teile:
+
+- Eine wiederverwendbare *Engine* (=include/=, =src/=) - Takt, Display,
+  Framebuffer, Sprites, Text, Joystick, Audio, sowie die *GameAPI*
+  (=include/game.h=), über die jedes Spiel angeschlossen wird.
+- Mehrere eigenständige *Beispiele* unter =examples/=, die jeweils die
+  Engine plus ihre eigenen, spielspezifischen Dateien zu einer Firmware
+  bauen.
+
+Dieses Dokument dient als Entwicklerhandbuch für Wartung, Erweiterung und
+Debugging - sowohl der Engine als auch neuer, eigener Spiele darauf.
+
+* Projektstruktur
+#+BEGIN_SRC text
+include/, src/          Engine (kein main() - reine Bibliothek)
+libopencm3/              Git-Submodul, die HAL-Basis (RCC, GPIO, SPI, ADC, Timer, DMA, ...)
+examples/
+  dig-demo/               kleine Demo: Kachelkarte, Sammeln, Graben
+  zauberschloss/          RPG angelehnt an "Zauberschloß" (C64, 1984)
+  grogs-revenge/          Arcade-Spiel angelehnt an "B.C. II: Grog's Revenge" (C64, 1984)
+  scroller-demo/          Proof-of-Concept für echtes pixelweises Side-Scrolling
+Makefile                 Delegiert an examples/*/Makefile
+Doxyfile                 Doxygen-Konfiguration (INPUT: src include examples)
+#+END_SRC
+
+** Build-System
+Das Wurzel-=Makefile= baut kein eigenes Firmware-Image - es iteriert nur
+über =EXAMPLES= und ruft =make -C examples/<name>= auf:
+
+#+BEGIN_SRC text
+make          baut alle Beispiele (jedes bekommt sein eigenes firmware.elf/.bin)
+make clean    räumt alle Beispiele auf
+make flash    flasht examples/dig-demo (Standard); für ein anderes Beispiel:
+              make -C examples/<name> flash
+make docs     erzeugt die Doxygen-Dokumentation (docs/html, docs/latex)
+#+END_SRC
+
+Jedes Beispiel hat ein eigenes, eigenständig lauffähiges Makefile
+(=examples/<name>/Makefile=), das die Engine-Quellen aus =../../src=
+zusammen mit den eigenen =*.c=-Dateien kompiliert:
+
+#+BEGIN_SRC makefile
+SRC  = $(wildcard ../../src/*.c) $(wildcard *.c)
+CFLAGS += -I../../include -I.
+#+END_SRC
+
+D.h. ein neues Beispiel anzulegen bedeutet: neuen Ordner unter
+=examples/=, das Makefile-Muster eines bestehenden Beispiels kopieren,
+eigenes =main.c= mit einer =GameAPI=-Instanz schreiben (siehe
+[[*GameAPI (=include/game.h=)]]), und im Wurzel-=Makefile= zu =EXAMPLES=
+hinzufügen.
+
+libopencm3 ist als Git-Submodul eingebunden (=.gitmodules=), nicht als
+Kopie - =git submodule update --init= nach dem Klonen nicht vergessen.
 
 * Pinbelegung (STM32F411)
 ** Übersicht
-| Funktion        | Pin  | Richtung | Peripherie | Beschreibung        |
-|-----------------+------+----------+------------+---------------------|
-| ST7789 CS       | PA4  | Output   | GPIO       | Chip Select LCD     |
-| ST7789 DC       | PA3  | Output   | GPIO       | Data/Command        |
-| ST7789 RESET    | PA2  | Output   | GPIO       | Display Reset       |
-| ST7789 SPI SCK  | PA5  | AF5      | SPI1       | Display Clock       |
-| ST7789 SPI MOSI | PA7  | AF5      | SPI1       | Display Data        |
-| Audio PWM Out   | PA6  | AF2      | TIM3_CH1   | PWM‑Audio           |
-| Joystick UP     | PB0  | Input    | GPIO       | Pull‑Up             |
-| Joystick DOWN   | PB1  | Input    | GPIO       | Pull‑Up             |
-| Joystick LEFT   | PB13 | Input    | GPIO       | Pull‑Up             |
-| Joystick RIGHT  | PB10 | Input    | GPIO       | Pull‑Up             |
-| Joystick BUTTON | PB12 | Input    | GPIO       | Pull‑Up             |
-| Joystick ADC X  | PA0  | Analog   | ADC1_IN0   | X‑Achse             |
-| Joystick ADC Y  | PA1  | Analog   | ADC1_IN1   | Y‑Achse             |
-| SD-Card CS      | PB5  | Output   | GPIO       | Chip Select SC-Card |
+| Funktion          | Pin  | Richtung | Peripherie      | Beschreibung             |
+|-------------------+------+----------+-----------------+--------------------------|
+| ST7789 CS         | PA4  | Output   | GPIO            | Chip Select LCD          |
+| ST7789 DC         | PA3  | Output   | GPIO            | Data/Command             |
+| ST7789 RESET      | PA2  | Output   | GPIO            | Display Reset            |
+| SPI1 SCK          | PA5  | AF5      | SPI1            | Display-Takt             |
+| SPI1 MOSI         | PA7  | AF5      | SPI1            | Display-Daten            |
+| SPI1 MISO         | PA6  | -        | SPI1 (unbenutzt) | frei, siehe Audio unten  |
+| Audio PWM Out     | PA6  | AF2      | TIM3_CH1        | PWM-Audio (teilt sich PA6 mit SPI1 MISO, das nicht angeschlossen ist) |
+| Joystick UP       | PB13 | Input    | GPIO            | Pull-Up                 |
+| Joystick DOWN     | PB15 | Input    | GPIO            | Pull-Up                 |
+| Joystick LEFT     | PB14 | Input    | GPIO            | Pull-Up                 |
+| Joystick RIGHT    | PB10 | Input    | GPIO            | Pull-Up                 |
+| Joystick BUTTON   | PB12 | Input    | GPIO            | Pull-Up                 |
+| Joystick ADC X    | PA0  | Analog   | ADC1_IN0        | X-Achse                 |
+| Joystick ADC Y    | PA1  | Analog   | ADC1_IN1        | Y-Achse                 |
+
+Alle Konstanten liegen in den jeweiligen Modul-Headern
+(=include/st7789.h=, =include/spi.h=, =include/sfx.h=,
+=include/joystick.h=) - dort nachschlagen, nicht hier, falls sich mal
+etwas ändert.
 
 ** Hinweise
-- Alle Display‑Pins liegen auf Port A → schnelle GPIO‑Zugriffe.
-- Audio‑PWM (PA6) nutzt TIM3_CH1 → APB1‑Timer (verdoppelte Clock).
-- Joystick‑Buttons sind *active low* (Pull‑Ups).
-- ADC‑Kanäle nutzen 12‑Bit‑Auflösung.
+- Alle Display-/Audio-/SPI-Pins liegen auf Port A, alle Joystick-Buttons
+  auf Port B.
+- Audio-PWM (PA6) nutzt TIM3_CH1 → APB1-Timer (verdoppelte Clock).
+- Joystick-Buttons sind *active low* (Pull-Ups); =JS_PORT=/=JS_*_PIN=
+  in =joystick.h=.
+- ADC-Kanäle nutzen 12-Bit-Auflösung, Sample-Time 144 Zyklen
+  (=adc.c=, =ADC_SMPR_SMP_144CYC=).
+- Eine SD-Karten-Anbindung ist *nicht* implementiert (kein Treiber im
+  Quellbaum) - falls das Board dafür verdrahtet ist, wäre das eine
+  Erweiterung über =spi.h= (siehe [[*Erweiterungsmöglichkeiten]]).
 
-* Systemstart & Clocking
+* Systemstart & Zeitbasis (=clock.h=/=clock.c=)
 ** clock_setup()
-Initialisiert den Systemtakt auf 100 MHz.
+Initialisiert den Systemtakt auf 100 MHz.
 
-- Aktiviert HSE (25 MHz)
-- Setzt AHB = /1, APB1 = /2, APB2 = /1
+- Aktiviert HSE (25 MHz)
 - Konfiguriert PLL:
   - PLLM = 25
   - PLLN = 200
-  - PLLP = 2 → 100 MHz SYSCLK
-  - PLLQ = 4 → 50 MHz USB/SDIO
-- Setzt Flash‑Waitstates (3 WS)
-- Schaltet auf PLL um
-- Aktualisiert Frequenzvariablen:
-  - rcc_ahb_frequency = 100 MHz
-  - rcc_apb1_frequency = 50 MHz
-  - rcc_apb2_frequency = 100 MHz
+  - PLLP = 2 → 100 MHz SYSCLK
+  - PLLQ = 4 → 50 MHz USB/SDIO
+- AHB = /1 (100 MHz), APB1 = /2 (50 MHz), APB2 = /1 (100 MHz)
+- Setzt Flash-Waitstates (3 WS), schaltet auf PLL um
+- Aktualisiert =rcc_ahb_frequency=/=rcc_apb1_frequency=/=rcc_apb2_frequency=
 
 ** systick_setup()
-Konfiguriert SysTick auf 1 ms‑Ticks.
-
-- Reload = 100000‑1
-- Clocksource = AHB
-- Interrupts aktiv
+Konfiguriert SysTick auf 1 ms-Ticks (Reload = 100000-1, Clocksource = AHB).
 
 ** sys_tick_handler()
-Wird jede Millisekunde aufgerufen.
+Wird jede Millisekunde aufgerufen und erhöht nur den internen Zähler
+=ms_ticks=. *Steuert nicht die Audio-Engine* - die läuft über einen
+eigenen TIM2-Interrupt bei 20 kHz (siehe [[*Audio-Engine (=include/sfx.h=/=include/music.h=)]]).
 
-- erhöht =ms_ticks=
-- ruft =sfx_update_1ms()= auf → Audio läuft non‑blocking
+** millis() / delay_ms(ms)
+=millis()= liefert den aktuellen Millisekunden-Zähler (überlaufsicher
+per Differenzbildung nutzbar). =delay_ms()= ist ein Busy-Wait darauf,
+u.a. für die Reset-Sequenz des Displays genutzt.
 
-** millis()
-Gibt die aktuelle Millisekunden‑Zeit zurück.
+* GameAPI (=include/game.h=)
+Das ist die zentrale Abstraktion, über die jedes Spiel an die Engine
+angeschlossen wird - jedes der vier Beispiele unter =examples/= besteht
+im Kern aus genau dieser Struktur plus =main()=:
 
-** delay_ms(ms)
-Busy‑wait Delay.
-Wird im Displaytreiber genutzt (Reset‑Sequenz).
+#+BEGIN_SRC c
+typedef struct {
+    const char *name;
+    void (*init)(void);
+    void (*update)(const JoystickState *js, uint32_t tick_ms);
+    void (*draw)(void);
+} GameAPI;
 
-* Non‑Blocking SFX‑Engine
-** Überblick
-Die SFX‑Engine erzeugt Töne über TIM3/PA6 im PWM‑Modus.
-Sie ist vollständig non‑blocking und wird über SysTick gesteuert.
+void game_run(const GameAPI *game, uint32_t tick_ms);
+#+END_SRC
 
-** sfx_init()
-Initialisiert TIM3 für PWM‑Audio.
+=game_run()=
 
-- Aktiviert TIM3 und GPIOA
-- Konfiguriert PA6 als AF2
-- Timer‑Clock = APB1 × 2 = 100 MHz
-- Prescaler so gewählt, dass Timer‑Tick = 1 MHz
-- Startperiode = 1 kHz
-- PWM‑Modus aktiviert
-- Duty‑Cycle = 0 (stumm)
+1. initialisiert Takt, SysTick, Display, Framebuffer-Palette und Joystick,
+2. ruft einmalig =game->init()= auf,
+3. läuft danach endlos: fragt den Joystick ab, ruft =game->update()= alle
+   =tick_ms= Millisekunden auf, ruft =game->draw()= *jede* Schleifen-
+   iteration auf (der Framebuffer ist zu diesem Zeitpunkt bereits mit
+   Farbe 0 gelöscht) und schiebt das Bild per =fb8_flush_dma()= raus.
 
-** sfx_update_1ms()
-Wird jede Millisekunde aufgerufen.
+Ein Spiel ruft =clock_setup()=/=st7789_init()=/etc. also *nie* selbst
+auf - das übernimmt =game_run()=.
 
-- verwaltet Restlaufzeit
-- stoppt Effekt automatisch
-- führt Effektlogik aus:
-  - LASER: Sweep nach oben
-  - EXPLOSION: Pseudo‑Zufallsfrequenzen
-  - NOISE_SHORT: schnelles Rauschen
+** Wahl von tick_ms
+=tick_ms= bestimmt, wie oft =update()= läuft - nicht, wie oft gezeichnet
+wird (das passiert immer, jede Iteration). Die drei kachelbasierten
+Beispiele (dig-demo, Zauberschloss, Grogs Revenge) bewegen ihre Figur in
+festen 16px-Schritten alle 150 ms - fühlt sich wie klassische
+Raster-Bewegung an. Das scroller-demo-Beispiel nutzt dagegen 30 ms, damit
+sich Position/Physik nah an jedem Frame ändert und die Kamera als
+flüssiges Scrollen statt als Raster-Sprünge wirkt (siehe
+[[*scroller-demo - echtes Side-Scrolling (Proof of Concept)]]).
 
-** sfx_play(type)
-Startet einen Effekt.
+* Framebuffer (=include/framebuffer8.h=)
+8-Bit-indizierter Framebuffer, 320×240 Pixel, 1 Byte pro Pixel
+(Palettenindex in =fb8_palette[256]=, RGB565).
 
-- setzt Startfrequenz
-- setzt Duty‑Cycle
-- setzt Laufzeit
-- initialisiert =sfx_param=
+#+BEGIN_SRC c
+#define FB8_WIDTH   320
+#define FB8_HEIGHT  240
 
-** sfx_stop()
-Stoppt Audioausgabe.
+void fb8_clear(uint8_t color);
+void fb8_set_pixel(int x, int y, uint8_t color);
+uint8_t fb8_get_pixel(int x, int y);
+void fb8_fill_rect(int x, int y, int w, int h, uint8_t color);
+void fb8_init_palette(void);
+void fb8_flush(void);       // gepollt, Referenzimplementierung
+void fb8_flush_dma(void);   // DMA-basiert, deutlich schneller - der Normalfall
+#+END_SRC
 
-* Framebuffer‑System (4‑Bit)
-** fb4_clear(color)
-Füllt den gesamten Framebuffer.
+=fb8_init_palette()= belegt die ersten 16 Paletteneinträge mit einer
+C64-artigen Farbpalette (Schwarz, Weiß, Rot, Cyan, Lila, Grün, Blau,
+Gelb, Orange, Braun, Hellrot, Dunkelgrau, Grau, Hellgrün, Hellblau,
+Hellgrau) - alle Beispiele nutzen diese Indizes konsistent.
 
-** fb4_set_pixel(x,y,color)
-Setzt ein Pixel (4‑Bit).
+=fb8_flush_dma()= konvertiert Zeile für Zeile in einen RGB565-Zwischen-
+puffer und schiebt ihn per DMA2/Stream3 über SPI1 raus (siehe
+[[*SPI-Abstraktion (=include/spi.h=)]]) - das ist der teuerste Schritt
+jeder Frame und damit die praktische Obergrenze für die erreichbare
+Bildrate, unabhängig von =tick_ms=.
 
-** fb4_get_pixel(x,y)
-Liest ein Pixel.
+* Sprite-Engine (=include/sprite16.h=)
+Ein einziges, festes Sprite-Format für die ganze Engine: 16×16 Pixel,
+1 Byte/Pixel (Palettenindex, 0 = transparent).
 
-** fb4_flush()
-Sendet den Framebuffer per SPI an das Display (ohne DMA).
+#+BEGIN_SRC c
+typedef struct {
+    uint8_t px[16][16];
+} sprite16_t;
 
-** fb4_flush_dma()
-DMA‑basierte Variante, schneller.
+void draw_sprite16(int x, int y, const sprite16_t *spr);
+#+END_SRC
 
-** fb4_fill_rect(x,y,w,h,color)
-Zeichnet ein Rechteck.
+=draw_sprite16()= zeichnet an *beliebigen* Pixelkoordinaten (nicht nur
+auf ein 16px-Raster) und klippt automatisch an den Framebuffer-Rändern.
+Genau das macht das scroller-demo-Beispiel möglich, ohne dass an der
+Engine etwas geändert werden musste - siehe
+[[*scroller-demo - echtes Side-Scrolling (Proof of Concept)]].
 
-* ST7789 Displaytreiber
-** st7789_init()
-Initialisiert das Display:
+* Text-Rendering (=include/text.h=)
+#+BEGIN_SRC c
+void draw_char(int x, int y, char c, uint8_t color);
+void draw_text(int x, int y, const char *s, uint8_t color);
+#+END_SRC
 
-- Reset‑Sequenz
-- Farbformat
-- Timing‑Parameter
-- Display ON
+Fester 8×8-Font (=font8x8_basic=, ASCII 32..127, siehe
+=include/font8x8.h=). Zeichen außerhalb dieses Bereichs werden als =?=
+dargestellt. *Es gibt keine Umlaute/ß* - alle Beispiele schreiben
+deutschen Text deshalb transliteriert (UE/OE/AE/SS), wie viele
+8-Bit-Spiele ihrer Zeit.
 
-** st7789_set_window()
-Setzt den Zeichenbereich.
+Ein zweiter, ungenutzter 6×8-Font liegt unter =include/font6x8.h= bereit
+(z. B. für kompakteren HUD-Text in einem künftigen Spiel).
 
-** st7789_draw_pixel()
-Zeichnet ein einzelnes Pixel.
+* Display-Treiber ST7789 (=include/st7789.h=)
+#+BEGIN_SRC c
+void st7789_init(void);
+void st7789_set_window(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1);
+void st7789_draw_pixel(uint16_t x, uint16_t y, uint16_t color);
+void st7789_fill_rect(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t color);
+void st7789_cmd(uint8_t cmd);
+void st7789_data(uint8_t data);
+#+END_SRC
 
-** st7789_fill_rect()
-Füllt einen Bereich mit einer Farbe.
+=st7789_init()= ruft =spi1_setup()= auf (siehe unten), macht die
+Reset-Sequenz über den RST-Pin und initialisiert das Panel: MADCTL
+(Querformat), COLMOD (16bpp RGB565), Timing-Register, Display-Inversion
+an, Sleep Out, Display On.
 
-* SPI‑Abstraktion
-** spi_setup()
-Initialisiert SPI1:
+* SPI-Abstraktion (=include/spi.h=)
+Ein einziger, geteilter SPI1-Treiber - alles, was SPI1 nutzt (aktuell
+nur das Display), ruft =spi1_setup()= einmal auf und nutzt danach
+=spi1_write8()=/=spi1_write_buf()=/=spi1_write_buf_dma()=.
 
-- Master
-- 8‑Bit
-- MSB‑first
-- Baudrate = fPCLK/2
+#+BEGIN_SRC c
+void spi1_setup(uint32_t baudrate_div);
+void spi1_write8(uint8_t data);
+void spi1_write_buf(const uint8_t *buf, uint32_t len);
+void spi1_write_buf_dma(const uint8_t *buf, uint32_t len);
+#+END_SRC
 
-** spi_write8()
-Sendet ein Byte und liest Dummy‑Byte zurück.
+Die DMA-Variante nutzt DMA2 Stream3 Channel3 (SPI1_TX), blockiert bis
+=DMA_TCIF= gesetzt ist, und wird von =fb8_flush_dma()= für den
+Framebuffer-Transfer genutzt.
 
-* Joystick‑Subsystem
-** joystick_init()
-Konfiguriert:
+* ADC-Abstraktion (=include/adc.h=)
+Kleiner, generischer ADC1-Wrapper (gepollt, Einzelkonvertierung),
+ursprünglich aus dem Joystick-Treiber herausgezogen, damit er auch für
+andere Analogeingänge wiederverwendbar ist:
 
-- GPIOB als Input mit Pull‑Ups
-- PA0/PA1 als Analog
-- ADC1 mit 144‑Cycle Sample Time
+#+BEGIN_SRC c
+void hal_adc_init(void);
+void hal_adc_pin_setup(uint32_t gpioport, uint16_t gpio_pin);
+uint16_t hal_adc_read(uint8_t channel);
+#+END_SRC
 
-** joystick_update()
-Liest:
+* Joystick-Subsystem (=include/joystick.h=)
+#+BEGIN_SRC c
+typedef struct {
+    uint8_t raw;       // aktuell gehaltene Tasten (JS_*-Bitmaske)
+    uint8_t pressed;   // Flanke: gerade gedrückt
+    uint8_t released;  // Flanke: gerade losgelassen
+    uint8_t repeat;     // Auto-Repeat-Puls
+} JoystickState;
 
-- digitale Buttons
-- pressed / released / repeat
-- analoge Achsen (ADC)
+void joystick_init(void);
+JoystickState joystick_update(void);
+uint16_t joystick_get_adc_x(void);
+uint16_t joystick_get_adc_y(void);
+#+END_SRC
 
-** joystick_get_adc_x(), joystick_get_adc_y()
-Geben die letzten ADC‑Werte zurück.
+Fünf digitale Tasten (UP/DOWN/LEFT/RIGHT/BTN, active low mit Pull-Up)
+plus zwei analoge Achsen. Alle vier Beispiele nutzen ausschließlich die
+fünf digitalen Tasten:
 
-* Text‑Rendering
-** draw_char_fb_trans()
-Zeichnet Zeichen ohne Hintergrund.
+- UP/DOWN/LEFT/RIGHT/den Analogstick nutzt bislang kein Beispiel für
+  Bewegung - er steht als Erweiterung offen (siehe
+  [[*Erweiterungsmöglichkeiten]]).
+- In dig-demo, Zauberschloss und Grogs Revenge bewegen die Pfeiltasten
+  die Spielfigur um genau ein Tile pro Logik-Tick; BTN löst eine
+  kontextabhängige Aktion auf dem Feld aus, dem die Figur zugewandt ist
+  bzw. an dem sie steht (Gegenstand aufheben, Tür aufschließen, kämpfen,
+  Zoll bezahlen) - das joystick-taugliche Äquivalent zu den
+  Zwei-Wort-Textkommandos der Originale.
+- Im scroller-demo bewegen LEFT/RIGHT die Figur kontinuierlich
+  (pixelweise, auch in der Luft), UP oder BTN springt.
 
-** draw_text_fb_trans()
-Zeichnet Text ohne Hintergrund.
+* Audio-Engine (=include/sfx.h=/=include/music.h=)
+** sfx.h - Pseudo-SID-Synthesizer
+Ein kleiner 3-Stimmen-Synthesizer, der einen PWM-Lautsprecherausgang
+ansteuert: TIM3 erzeugt die ~40 kHz PWM-Trägerfrequenz auf PA6, TIM2
+läuft mit 20 kHz und treibt bei jedem Interrupt den Stimmen-Mixer
+(=sid_update()= in =sfx.c=) - *nicht* SysTick.
 
-** draw_char_fb()
-Zeichnet Zeichen mit Hintergrund.
+#+BEGIN_SRC c
+typedef enum {
+    SFX_NONE = 0, SFX_BEEP, SFX_LASER, SFX_EXPLOSION,
+    SFX_NOISE_SHORT, SFX_PICKUP, SFX_MOVE,
+} SfxType;
 
-** draw_text_fb()
-Zeichnet Text mit Hintergrund.
+void sfx_init(void);
+void sfx_update_1ms(void);   // interner 1ms-Tick, wird aus dem TIM2-ISR abgeleitet
+void sfx_play(SfxType type); // Stimme 1: kanonische Effekte
+void sfx_stop(void);
+void sfx_play_freq(uint16_t freq);  // Stimme 0: rohe Frequenz, für music.h
+#+END_SRC
 
-** draw_char(), draw_text()
-Direktes Rendering auf ST7789 (ohne Framebuffer).
+Jede Stimme hat eine Wellenform (Rechteck/Dreieck/Rauschen via LFSR),
+Frequenz, Lautstärke und Phasenakkumulator; die Mischung wird pro
+20-kHz-Sample auf den PWM-Tastgrad abgebildet. Die Frequenz-zu-Phasen-
+Schrittweite wird als Q16-Fixpunkt-Multiplikator vorab berechnet
+(=SID_STEP_PER_HZ_Q16=), damit zur Laufzeit keine 64-Bit-Division nötig
+ist (der Cortex-M4 hat dafür keine Hardware, und =-nostdlib= verlinkt
+kein =libgcc= für den Softwarepfad).
 
-* Sprite‑Rendering
-** sprite4_draw()
-Zeichnet Sprite ohne Transparenz.
+** music.h - Noten-Sequencer
+Generischer Player für eine =MusicNote[]=-Sequenz über =sfx_play_freq()=
+(Stimme 0):
 
-** sprite4_draw_trans()
-Zeichnet Sprite mit Transparenzfarbe.
+#+BEGIN_SRC c
+typedef struct {
+    uint16_t freq;      // 0 = Pause
+    uint16_t duration;  // ms; duration == 0 markiert Track-Ende (springt zurück auf 0)
+} MusicNote;
 
-* Diagnostic‑Module
-** joystick_draw_diag()
-Zeigt Joystick‑Status im Framebuffer an.
+void music_init(const MusicNote *track);
+void music_update_1ms(void);
+void music_stop(void);
+#+END_SRC
 
-* Main‑Loop‑Integration
-** Ablauf
-1. Clock & SysTick
-2. Display‑GPIO
-3. SPI
-4. Display init
-5. Framebuffer init
-6. Joystick init
-7. SFX init
-8. Endlosschleife
+Die Engine liefert *keine* Musikdaten mit - jedes Spiel bringt seinen
+eigenen Track mit. dig-demo tut das in =examples/dig-demo/track.h= +
+=track.c=, generiert aus einer MIDI-Datei über
+=examples/dig-demo/tools/midi2console.py= (siehe dort das
+=README-midi2console.md=).
 
-** Testschleife für Audio
-Alle 500 ms wird ein anderer Effekt abgespielt:
+* Die Beispiele (=examples/=)
+Jedes Beispiel ist in sich geschlossen (eigene Tile-IDs, eigene
+Pixelkunst, eigenes =main.c= mit einer =GameAPI=-Instanz) und
+eigenständig baubar. Gemeinsames Muster: Zustandsautomat (Titel → Spiel
+→ Sieg/Game Over), deutschsprachiger UI-Text ohne Umlaute.
 
-- BEEP
-- LASER
-- EXPLOSION
-- NOISE_SHORT
+** dig-demo - Technik-Demo
+Kleine Boulder-Dash-artige Demo auf einer einzelnen Bildschirmkarte
+(20×15 Tiles): Spielfigur läuft über die Karte, gräbt Erde frei,
+sammelt Diamanten, HUD zeigt Punktzahl/Leben. Zeigt Kachelkarte
+(=tiles.h=/=tileset16.h=), Sprites, Sound-Event-Mapping (=sound.h=,
+=bd_sound_play()=) und Musik-Wiedergabe im Zusammenspiel.
 
-Audio läuft vollständig non‑blocking.
+** zauberschloss - RPG
+Angelehnt an das deutsche C64-Adventure „Zauberschloß" (1984, Dennis
+Merbach): Krone aus dem verschlossenen Schloss des Zauberers stehlen und
+damit entkommen. Vier persistente Räume (=rooms.c=: Eingang, Wachraum,
+Schatzkammer, Thronsaal) über eine Nachbarschaftstabelle verbunden -
+Zustand pro Raum (offene Türen, besiegte Wache, aufgesammelte
+Gegenstände) bleibt beim Verlassen und Wiederbetreten erhalten
+(=tiles_select_map()= schaltet nur den aktiven Kartenpuffer um, baut
+nichts neu). Rätselkette: Schwert in der Schatzkammer holen → Wache im
+Wachraum damit besiegen → Schlüssel findet sich dort → damit die Tür zum
+Thronsaal aufschließen → Krone nehmen (weckt den Zauberer, der einen
+danach im Thronsaal jagt) → zurück zum Eingang und durchs Tor.
+
+** grogs-revenge - Arcade
+Angelehnt an „B.C. II: Grog's Revenge" (C64, 1984, Sydney Development):
+Thor reitet auf seinem Steinrad über drei Berge (=mountains.c=,
+zunehmend schwieriger), sammelt Muscheln, um Peters Zoll zu bezahlen und
+zum nächsten Berg zu gelangen, während Grog ihn jagt (einfache
+Greedy-Verfolgung, siehe =grog_update()= in =main.c=) und Felsen/Löcher
+den Weg versperren. Vereinfacht gegenüber dem Original: ein Bildschirm
+pro Berg (kein seitliches Scrollen innerhalb eines Bergs), keine
+separaten dunklen Höhlen-Level, kein zweiter Gegnertyp (Tiredactyl) -
+alles mögliche Erweiterungen, siehe unten.
+
+** scroller-demo - echtes Side-Scrolling (Proof of Concept)
+Beantwortet die Frage, ob mit dieser Engine *echtes*, pixelgenaues
+Side-Scrolling möglich ist (ja) - im Unterschied zu den drei
+kachelbasierten Beispielen oben, die sich in festen 16px-Schritten pro
+Logik-Tick bewegen.
+
+- =level.h=/=level.c=: ein Höhenfeld pro Spalte (=ground_row[100]=,
+  100 Tiles = 1600px breit) plus Hindernis-/Münz-Overlays - deutlich
+  breiter als der 320px-Bildschirm.
+- Die Kamera (=camera_x=) folgt der Spielfigur in *einzelnen Pixeln*.
+  Beim Zeichnen wird der Sub-Tile-Rest (=frac = camera_x % 16=)
+  berechnet und jede sichtbare Spalte entsprechend versetzt gezeichnet -
+  =draw_sprite16()= musste dafür *nicht* geändert werden, es zeichnet
+  schon immer auf beliebigen Pixelkoordinaten.
+- =TICK_MS= ist mit 30 statt 150 deutlich kürzer, damit sich Bewegung
+  und Schwerkraft-/Sprungphysik nah an jedem Frame ändern und nicht als
+  sichtbare Raster-Sprünge wirken.
+- Einfache Integer-Physik: Schwerkraft, Sprungimpuls, Boden-Snapping pro
+  Spalte (klassisches "Sonic-Style" Höhenfeld statt echter
+  AABB-Kollision gegen Wände).
 
 * Erweiterungsmöglichkeiten
-- Game‑Boy‑ähnliche 4‑Kanal‑Soundengine
-- Tilemap‑Renderer
-- DMA‑basierter Sprite‑Blitter
-- Musik‑Sequencer
-- Interrupt‑gesteuerte Input‑Engine
+Realistische nächste Schritte, sortiert grob nach Aufwand:
+
+- Analogstick (=joystick_get_adc_x/y()=) für Bewegung nutzen - bisher
+  nutzt kein Beispiel die Achsen, nur die fünf Digitaltasten.
+- grogs-revenge: zweiter Gegnertyp (Tiredactyl), dunkle Höhlen-Level
+  (Lichtkegel um die Spielfigur statt volle Sichtbarkeit), echtes
+  Scrolling innerhalb eines Bergs (könnte scroller-demos Kamera-Technik
+  wiederverwenden).
+- zauberschloss: weitere Räume/Etagen, Inventar-Anzeige im HUD statt nur
+  J/N-Kürzel.
+- scroller-demo: horizontale Wände/Kollision statt reinem Höhenfeld,
+  mehrere Level, Gegner.
+- SD-Karten-Anbindung über =spi.h= (aktuell nicht implementiert, siehe
+  Pinbelegung oben) - z. B. für Level- oder Sprite-Daten von Karte statt
+  aus dem Flash.
+- Speicherstand (Battery-backed RAM / Flash-Sektor) für Fortschritt
+  zwischen Sitzungen.
+- Zweiter, austauschbarer Font (=font6x8.h= liegt schon bereit) für
+  kompakteren HUD-Text.
 
 * Schlusswort
-Dieses Dokument beschreibt die komplette Architektur deiner STM32‑Game‑Plattform.
-Es dient als Grundlage für Erweiterungen, Debugging und langfristige Wartbarkeit.
-
-* Detaillierte Beschreibung des Framebuffer‑Systems (4‑Bit Packed)
-
-Das Framebuffer‑Subsystem bildet die zentrale Rendering‑Pipeline der Plattform.
-Es ermöglicht schnelles, speichereffizientes Zeichnen in 4‑Bit‑Farbtiefe
-(16 Farben), bevor der Inhalt per SPI oder DMA an das ST7789‑Display übertragen wird.
-
-** Grundprinzip
-Der Framebuffer ist ein 320×240‑Pixel‑Bildspeicher, der in einem kompakten
-4‑Bit‑Format abgelegt wird:
-
-- *2 Pixel pro Byte*
-- *oberes Nibble = Pixel links*
-- *unteres Nibble = Pixel rechts*
-
-Dies halbiert den Speicherbedarf gegenüber 8‑Bit‑Farben und ermöglicht
-schnelles Zeichnen auf einem Mikrocontroller ohne Cache.
-
-** Speicherlayout
-#+BEGIN_SRC text
-Byte 0: [P0 | P1]
-Byte 1: [P2 | P3]
-Byte 2: [P4 | P5]
-...
-#+END_SRC
-
-Die Pixel werden zeilenweise gespeichert:
-
-#+BEGIN_SRC text
-Index = (y * FB4_WIDTH + x) >> 1
-odd   = x & 1
-#+END_SRC
-
-- Wenn =odd == 0= → Pixel liegt im *oberen* Nibble
-- Wenn =odd == 1= → Pixel liegt im *unteren* Nibble
-
-** Farbpalette (16 Farben, RGB565)
-Die 4‑Bit‑Farben sind Indizes in eine 16‑Einträge‑Palette:
-
-#+BEGIN_SRC c
-static const uint16_t fb4_default_palette[16] = {
-    0x0000, 0xFFFF, 0xF800, 0x07E0,
-    0x001F, 0xFFE0, 0xF81F, 0x07FF,
-    0x8410, 0x4208, 0xFC00, 0x83E0,
-    0x7BEF, 0xA145, 0xFD20, 0xFFFF
-};
-#+END_SRC
-
-Diese Palette wird beim Start nach =fb4_palette= kopiert und kann zur Laufzeit
-angepasst werden.
-
-** Funktionen im Detail
-
-*** fb4_clear(color)
-Füllt den gesamten Framebuffer mit einer Farbe.
-
-- setzt beide Nibbles eines Bytes auf denselben Wert
-- extrem schnell, da nur ein Byte‑Wert geschrieben wird
-
-*** fb4_set_pixel(x, y, color)
-Setzt ein einzelnes Pixel.
-
-Algorithmus:
-
-1. Koordinaten prüfen
-2. Byte‑Index berechnen
-3. Nibble auswählen
-4. Nibble maskieren und neues Pixel einsetzen
-
-#+BEGIN_SRC c
-if (odd)
-    framebuffer4[index] = (old & 0xF0) | (color & 0x0F);
-else
-    framebuffer4[index] = (old & 0x0F) | (color << 4);
-#+END_SRC
-
-*** fb4_get_pixel(x, y)
-Liest ein Pixel aus dem Framebuffer.
-
-- extrahiert das entsprechende Nibble
-- gibt 4‑Bit‑Farbindex zurück
-
-*** fb4_fill_rect(x, y, w, h, color)
-Zeichnet ein Rechteck.
-
-- nutzt intern =fb4_set_pixel=
-- nicht die schnellste Methode, aber flexibel
-- ideal für UI‑Elemente, Hintergründe, Debug‑Overlays
-
-*** fb4_flush()
-Überträgt den Framebuffer *ohne DMA* an das Display.
-
-Ablauf:
-
-1. Fenster auf volle Displaygröße setzen
-2. Für jedes Byte:
-   - oberes Nibble → Palette → RGB565 → SPI senden
-   - unteres Nibble → Palette → RGB565 → SPI senden
-
-Dies ist die einfachste, aber nicht die schnellste Variante.
-
-*** fb4_flush_dma()
-DMA‑basierte Übertragung, deutlich schneller.
-
-Ablauf:
-
-1. DMA2 Stream3 für SPI1 konfigurieren
-2. Jede Zeile in einen temporären 8‑Bit‑RGB565‑Buffer konvertieren
-3. DMA‑Transfer starten
-4. Auf Transfer‑Complete warten
-5. Nächste Zeile senden
-
-Vorteile:
-
-- CPU wird entlastet
-- konstante Übertragungszeit pro Zeile
-- ideal für Spiele oder Animationen
-
-** Performance‑Überlegungen
-- 4‑Bit‑Framebuffer halbiert den Speicherbedarf → schnelleres Zeichnen
-- DMA‑Flush ist ~3–4× schneller als SPI‑Flush
-- Pixel‑Setzen ist O(1), aber bit‑masking kostet etwas Zeit
-- Rechtecke sind effizient, da sie nur Pixel‑Writes wiederholen
-- Vollbild‑Flush ist der teuerste Schritt (ca. 320×240×2 Bytes)
-
-** Typische Fehlerquellen
-- Vergessen, die Palette zu initialisieren → falsche Farben
-- Out‑of‑Bounds‑Zugriffe bei =fb4_set_pixel=
-- Displayfenster nicht korrekt gesetzt → verzerrte Ausgabe
-- SPI nicht im 8‑Bit‑Modus → Farbstörungen
-- DMA‑Stream nicht zurückgesetzt → keine Ausgabe
-
-** Best Practices
-- Für UI‑Elemente: =fb4_fill_rect=
-- Für Text: =draw_text_fb_trans= (spart Hintergrund)
-- Für Sprites: =sprite4_draw_trans=
-- Für Animationen: immer =fb4_flush_dma()= verwenden
-- Palette zur Laufzeit anpassen für Effekte (z. B. Fade‑Out)
-
-** Beispiel: Pixel setzen
-#+BEGIN_SRC c
-fb4_set_pixel(10, 20, 3);   // grünes Pixel
-#+END_SRC
-
-** Beispiel: Vollbild löschen
-#+BEGIN_SRC c
-fb4_clear(0);   // schwarz
-#+END_SRC
-
-** Beispiel: Framebuffer anzeigen
-#+BEGIN_SRC c
-fb4_flush_dma();
-#+END_SRC
-
-
-
-
-* Detaillierte Beschreibung der Sprite‑Engine (4‑Bit Packed)
-
-Die Sprite‑Engine ermöglicht das Zeichnen kleiner, rechteckiger Grafiken
-(Sprites) auf den 4‑Bit‑Framebuffer.
-Sie ist bewusst minimalistisch gehalten, aber effizient und flexibel genug
-für UI‑Elemente, Icons, Gegner, Spielerfiguren oder Partikeleffekte.
-
-** Grundprinzip
-Ein Sprite besteht aus:
-
-- einer festen Breite (in Pixeln)
-- einer festen Höhe (in Pixeln)
-- einem Zeiger auf 4‑Bit‑packed Pixeldaten
-
-Das Format entspricht exakt dem Framebuffer‑Format:
-
-- *2 Pixel pro Byte*
-- oberes Nibble = Pixel links
-- unteres Nibble = Pixel rechts
-
-Dies ermöglicht schnelles Kopieren ohne Konvertierung.
-
-** Sprite‑Datenstruktur
-#+BEGIN_SRC c
-typedef struct {
-    uint8_t width;
-    uint8_t height;
-    const uint8_t *data;   // 4-bit packed
-} Sprite4;
-#+END_SRC
-
-Die Daten werden zeilenweise gespeichert:
-
-#+BEGIN_SRC text
-Byte 0: [P0 | P1]
-Byte 1: [P2 | P3]
-Byte 2: [P4 | P5]
-...
-#+END_SRC
-
-** Beispiel: 8×8‑Sprite
-#+BEGIN_SRC c
-static const uint8_t sprite_test_data[] = {
-    0x11,0x11,0x11,0x11,
-    0x12,0x22,0x22,0x21,
-    0x12,0x22,0x22,0x21,
-    0x12,0x22,0x22,0x21,
-    0x12,0x22,0x22,0x21,
-    0x12,0x22,0x22,0x21,
-    0x12,0x22,0x22,0x21,
-    0x11,0x11,0x11,0x11
-};
-#+END_SRC
-
-** Funktionen im Detail
-
-*** sprite4_draw(x, y, spr)
-Zeichnet ein Sprite *ohne Transparenz*.
-
-Algorithmus:
-
-1. =idx= zählt Pixel im Sprite
-2. Für jedes Pixel:
-   - Byte = spr->data[idx >> 1]
-   - Farbe = oberes oder unteres Nibble
-3. Pixel wird direkt in den Framebuffer geschrieben
-
-#+BEGIN_SRC c
-uint8_t packed = spr->data[idx >> 1];
-uint8_t color  = (idx & 1) ? (packed & 0x0F) : (packed >> 4);
-fb4_set_pixel(x + px, y + py, color);
-#+END_SRC
-
-Eigenschaften:
-
-- einfach
-- schnell
-- überschreibt immer den Hintergrund
-
-Ideal für:
-
-- UI‑Elemente
-- Tiles
-- Icons
-
-*** sprite4_draw_trans(x, y, spr, transparent)
-Zeichnet ein Sprite *mit Transparenzfarbe*.
-
-Algorithmus:
-
-1. Pixel extrahieren wie oben
-2. Wenn Pixel != transparent → zeichnen
-3. Sonst → Hintergrund bleibt erhalten
-
-#+BEGIN_SRC c
-if (color != transparent)
-    fb4_set_pixel(x + px, y + py, color);
-#+END_SRC
-
-Ideal für:
-
-- Spielfiguren
-- Gegner
-- Partikel
-- Overlays
-
-** Performance‑Überlegungen
-- Sprites sind klein → O(width×height)
-- Kein DMA beim Zeichnen → CPU‑basiert
-- Transparenz kostet zusätzliche Vergleiche
-- Packed‑Format spart Speicher, aber erfordert Bit‑Operationen
-
-** Typische Fehlerquellen
-- Falsches Packed‑Format (Nibble vertauscht)
-- Sprite außerhalb des Bildschirms → Clipping fehlt bewusst
-- Transparenzfarbe falsch gewählt
-- Spritebreite ungerade → Daten müssen exakt passen
-
-** Best Practices
-- Sprites möglichst klein halten (8×8, 16×16)
-- Transparenzfarbe = 0 (schwarz) oder 15 (weiß) für Klarheit
-- Für Animationen: mehrere Sprite‑Frames im Flash ablegen
-- Für große Grafiken: lieber =fb4_fill_rect= oder Tile‑Renderer nutzen
-- Clipping bei Bedarf im Aufrufer implementieren
-
-** Beispiel: Sprite zeichnen
-#+BEGIN_SRC c
-sprite4_draw(100, 50, &sprite_test);
-#+END_SRC
-
-** Beispiel: Sprite mit Transparenz
-#+BEGIN_SRC c
-sprite4_draw_trans(100, 50, &sprite_test, 0);   // 0 = transparent
-#+END_SRC
-
-** Erweiterungsmöglichkeiten
-- Clipping (automatisch oder optional)
-- Rotation / Flip (horizontal/vertikal)
-- Scaling (nearest neighbor)
-- Sprite‑Sheets (Tile‑Indexing)
-- Hardware‑beschleunigtes Blitting (DMA2D auf F4‑Geräten)
-- Z‑Layering / Prioritäten
-- Animationstimer
-
-  * Sprite‑Animationen (Frame‑basierte Animationen)
-
-Sprite‑Animationen erweitern die bestehende Sprite‑Engine um die Fähigkeit,
-mehrere Frames eines Sprites nacheinander abzuspielen.
-Dies ist ideal für:
-
-- Laufanimationen
-- Explosionen
-- UI‑Effekte
-- Gegnerbewegungen
-- Partikel
-
-** Grundprinzip
-Eine Animation besteht aus:
-
-- einer Liste von Sprite‑Frames
-- einer Frame‑Dauer (in Millisekunden)
-- einem aktuellen Frame‑Index
-- einem Timer, der im SysTick herunterzählt
-- einer Loop‑Option (repeat / einmalig)
-
-** Datenstruktur
-#+BEGIN_SRC c
-typedef struct {
-    const Sprite4 **frames;   // Array von Sprite-Pointern
-    uint8_t frame_count;      // Anzahl Frames
-    uint8_t current_frame;    // aktueller Frame
-    uint16_t frame_time_ms;   // Dauer pro Frame
-    uint16_t timer;           // Countdown
-    uint8_t loop;             // 1 = wiederholen
-} SpriteAnim;
-#+END_SRC
-
-** Ablauf
-1. =timer= wird im SysTick heruntergezählt
-2. Wenn =timer == 0=:
-   - =current_frame++=
-   - bei Ende:
-     - wenn loop → zurück zu 0
-     - sonst → Animation endet
-3. Beim Zeichnen wird immer =frames[current_frame]= verwendet
-
-** Beispiel: Animation initialisieren
-#+BEGIN_SRC c
-static const Sprite4 *walk_frames[] = {
-    &sprite_walk1,
-    &sprite_walk2,
-    &sprite_walk3,
-    &sprite_walk4
-};
-
-SpriteAnim walk_anim = {
-    .frames = walk_frames,
-    .frame_count = 4,
-    .current_frame = 0,
-    .frame_time_ms = 120,
-    .timer = 120,
-    .loop = 1
-};
-#+END_SRC
-
-** Update‑Funktion (im SysTick)
-#+BEGIN_SRC c
-void sprite_anim_update(SpriteAnim *a)
-{
-    if (a->frame_count <= 1) return;
-
-    if (a->timer > 0) {
-        a->timer--;
-        return;
-    }
-
-    a->timer = a->frame_time_ms;
-
-    a->current_frame++;
-
-    if (a->current_frame >= a->frame_count) {
-        if (a->loop)
-            a->current_frame = 0;
-        else
-            a->current_frame = a->frame_count - 1;
-    }
-}
-#+END_SRC
-
-** Zeichnen der Animation
-#+BEGIN_SRC c
-sprite4_draw_trans(x, y, a->frames[a->current_frame], transparent);
-#+END_SRC
-
-** Best Practices
-- Framegrößen sollten identisch sein
-- Transparenzfarbe konsequent verwenden
-- Frame‑Dauer nicht zu kurz wählen (60–150 ms ideal)
-- Animationen im SysTick aktualisieren
-
----
-
-* Tilemaps (Kachel‑basierte Hintergründe)
-
-Tilemaps ermöglichen das effiziente Zeichnen großer Hintergründe oder Levels,
-ohne jedes Pixel einzeln zu setzen.
-Sie bestehen aus:
-
-- einer Kachelbibliothek (Tileset)
-- einer 2D‑Matrix von Tile‑Indizes
-- optional: mehreren Layern
-
-** Grundprinzip
-Ein Tile ist ein kleines Sprite, typischerweise:
-
-- 8×8 Pixel
-- 16×16 Pixel
-
-Eine Tilemap ist ein Raster aus Tile‑IDs:
-
-#+BEGIN_SRC text
-[ 1 1 1 1 1 1 1 1 ]
-[ 1 2 2 2 2 2 2 1 ]
-[ 1 2 3 3 3 3 2 1 ]
-[ 1 2 3 4 4 3 2 1 ]
-#+END_SRC
-
-** Datenstruktur
-#+BEGIN_SRC c
-typedef struct {
-    const Sprite4 **tiles;   // Array aller Tiles
-    uint16_t width;          // Anzahl Tiles horizontal
-    uint16_t height;         // Anzahl Tiles vertikal
-    const uint16_t *map;     // Tile-IDs (width*height)
-} Tilemap;
-#+END_SRC
-
-** Zeichnen der Tilemap
-#+BEGIN_SRC c
-void tilemap_draw(const Tilemap *tm, int x0, int y0)
-{
-    int idx = 0;
-
-    for (int ty = 0; ty < tm->height; ty++) {
-        for (int tx = 0; tx < tm->width; tx++) {
-
-            uint16_t tile_id = tm->map[idx++];
-            const Sprite4 *spr = tm->tiles[tile_id];
-
-            sprite4_draw(x0 + tx * spr->width,
-                         y0 + ty * spr->height,
-                         spr);
-        }
-    }
-}
-#+END_SRC
-
-** Beispiel: Tileset definieren
-#+BEGIN_SRC c
-const Sprite4 *tileset[] = {
-    &tile_grass,
-    &tile_dirt,
-    &tile_water,
-    &tile_stone
-};
-#+END_SRC
-
-** Beispiel: Tilemap definieren
-#+BEGIN_SRC c
-static const uint16_t level1_map[] = {
-    0,0,0,0,0,0,0,0,
-    0,1,1,1,1,1,1,0,
-    0,1,2,2,2,2,1,0,
-    0,1,2,3,3,2,1,0
-};
-
-Tilemap level1 = {
-    .tiles = tileset,
-    .width = 8,
-    .height = 4,
-    .map = level1_map
-};
-#+END_SRC
-
-** Tilemap zeichnen
-#+BEGIN_SRC c
-tilemap_draw(&level1, 0, 0);
-#+END_SRC
-
-** Scrolling (optional)
-Für horizontales/vertikales Scrolling:
-
-- x0/y0 verschieben
-- nur sichtbare Tiles zeichnen
-- Clipping im Aufrufer implementieren
-
-** Performance‑Hinweise
-- Tilemaps sind extrem schnell, da sie nur Sprites zeichnen
-- Ideal für Hintergründe, Levels, UI‑Panels
-- Große Maps können in Abschnitte (Chunks) geteilt werden
-
-** Erweiterungsmöglichkeiten
-- mehrere Layer (z. B. Hintergrund + Vordergrund)
-- Tile‑Animationen (z. B. Wasser)
-- Kollisionserkennung über Tile‑IDs
-- Auto‑Tiling (Kanten automatisch setzen)
-- Tile‑Scrolling mit Subpixel‑Offsets
+Dieses Dokument beschreibt die Engine (Takt, Display, Framebuffer,
+Sprites, Text, Joystick, Audio, GameAPI) sowie die vier Beispiele, die
+aktuell darauf aufbauen. Bei Erweiterungen: neue Engine-Funktionalität
+gehört nach =include/=/=src/= (allgemeingültig, kein Spielwissen), alles
+Spielspezifische in einen neuen oder bestehenden Ordner unter
+=examples/=.
