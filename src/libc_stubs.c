@@ -1,5 +1,11 @@
+/**
+ * @file libc_stubs.c
+ * @brief Implementation of the freestanding memset()/memcpy() (see
+ *        libc_stubs.h).
+ */
 #include "libc_stubs.h"
 
+/** @brief See memset() in the header for the full contract. */
 void *memset(void *dst, int value, size_t n)
 {
     unsigned char *d = (unsigned char *)dst;
@@ -9,6 +15,7 @@ void *memset(void *dst, int value, size_t n)
     return dst;
 }
 
+/** @brief See memcpy() in the header for the full contract. */
 void *memcpy(void *dst, const void *src, size_t n)
 {
     unsigned char *d = (unsigned char *)dst;

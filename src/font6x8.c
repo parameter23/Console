@@ -1,3 +1,7 @@
+/**
+ * @file font6x8.c
+ * @brief Glyph data for the 6x8 font (see font6x8.h).
+ */
 #include "font6x8.h"
 
 const uint8_t font6x8[96][6] = {

@@ -1,16 +1,14 @@
+/**
+ * @file sound.c
+ * @brief Implementation of the sound-event dispatcher (see sound.h).
+ */
 #include "sound.h"
 #include "sfx.h"
 #include <stddef.h>
 
-/*
- * This used to be declared in sound.h but never implemented anywhere in
- * the project. bd_sound_play() is the game-facing sound API: it maps
- * abstract game events (SoundId) onto the low-level synth effects in
- * sfx.h/sfx.c.
- */
-
 static SoundId pending_sound = SND_NONE;
 
+/** @brief See bd_sound_play() in the header for the full contract. */
 void bd_sound_play(SoundId id)
 {
     /* Latch the most recent request; bd_sound_update() dispatches it.
@@ -18,6 +16,7 @@ void bd_sound_play(SoundId id)
     pending_sound = id;
 }
 
+/** @brief See bd_sound_update() in the header for the full contract. */
 void bd_sound_update(void)
 {
     if (pending_sound == SND_NONE)

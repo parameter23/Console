@@ -1,7 +1,12 @@
+/**
+ * @file text.c
+ * @brief Implementation of the 8x8 bitmap text renderer (see text.h).
+ */
 #include "text.h"
 #include "font8x8.h"
 #include "framebuffer8.h"
 
+/** @brief See draw_char() in the header for the full contract. */
 void draw_char(int x, int y, char c, uint8_t color)
 {
     if (c < 32 || c > 127)
@@ -18,6 +23,7 @@ void draw_char(int x, int y, char c, uint8_t color)
     }
 }
 
+/** @brief See draw_text() in the header for the full contract. */
 void draw_text(int x, int y, const char *s, uint8_t color)
 {
     while (*s) {

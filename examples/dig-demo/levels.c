@@ -1,11 +1,16 @@
+/**
+ * @file levels.c
+ * @brief Implementation of level_load() (see levels.h).
+ */
 #include "levels.h"
 #include "tiles.h"
 
-/*
- * One hand-built demo level. Border of steel, dirt everywhere else, a
- * handful of rocks/diamonds, one butterfly, a small amoeba patch, and an
- * exit that opens once all diamonds are collected (see game_state.c /
- * player.c).
+/**
+ * @brief See level_load() in the header for the full contract.
+ *
+ * One hand-built demo level: a border of steel, dirt everywhere else, a
+ * handful of rocks/diamonds, one butterfly, a small amoeba patch, and
+ * an exit tile (unused by this simplified demo - see main.c).
  */
 void level_load(int index)
 {
@@ -28,7 +33,7 @@ void level_load(int index)
     set_tile(10, 5, T_ROCK);
     set_tile(14, 4, T_ROCK);
 
-    /* Diamonds (defines diamonds_needed via game_state.c's scan) */
+    /* Diamonds */
     set_tile(3, 8, T_DIAMOND);
     set_tile(8, 9, T_DIAMOND);
     set_tile(12, 8, T_DIAMOND);
@@ -46,6 +51,6 @@ void level_load(int index)
     set_tile(4, 11, T_AMOEBA);
     set_tile(5, 11, T_AMOEBA);
 
-    /* Exit - stays closed until all diamonds are collected */
+    /* Exit - closed by default */
     set_tile(MAP_W - 3, MAP_H - 2, T_EXIT_CLOSED);
 }

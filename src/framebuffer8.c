@@ -1,3 +1,7 @@
+/**
+ * @file framebuffer8.c
+ * @brief Implementation of the 8-bit paletted framebuffer (see framebuffer8.h).
+ */
 #include "framebuffer8.h"
 #include "st7789.h"
 #include "spi.h"
@@ -6,6 +10,7 @@
 uint8_t  framebuffer8[FB8_SIZE];
 uint16_t fb8_palette[256];
 
+/** @brief See fb8_clear() in the header for the full contract. */
 void fb8_clear(uint8_t color)
 {
     /* memset() is our own freestanding implementation (libc_stubs.c),
@@ -13,6 +18,7 @@ void fb8_clear(uint8_t color)
     memset(framebuffer8, color, FB8_SIZE);
 }
 
+/** @brief See fb8_set_pixel() in the header for the full contract. */
 void fb8_set_pixel(int x, int y, uint8_t color)
 {
     if (x < 0 || y < 0 || x >= FB8_WIDTH || y >= FB8_HEIGHT)
@@ -20,6 +26,7 @@ void fb8_set_pixel(int x, int y, uint8_t color)
     framebuffer8[y * FB8_WIDTH + x] = color;
 }
 
+/** @brief See fb8_get_pixel() in the header for the full contract. */
 uint8_t fb8_get_pixel(int x, int y)
 {
     if (x < 0 || y < 0 || x >= FB8_WIDTH || y >= FB8_HEIGHT)
@@ -27,6 +34,7 @@ uint8_t fb8_get_pixel(int x, int y)
     return framebuffer8[y * FB8_WIDTH + x];
 }
 
+/** @brief See fb8_fill_rect() in the header for the full contract. */
 void fb8_fill_rect(int x, int y, int w, int h, uint8_t color)
 {
     for (int yy = y; yy < y + h; yy++) {
@@ -38,6 +46,7 @@ void fb8_fill_rect(int x, int y, int w, int h, uint8_t color)
     }
 }
 
+/** @brief See fb8_init_palette() in the header for the full contract. */
 void fb8_init_palette(void)
 {
     /* C64-style base palette in the first 16 slots */
@@ -67,6 +76,7 @@ void fb8_init_palette(void)
         fb8_palette[i] = 0x0000;
 }
 
+/** @brief See fb8_flush() in the header for the full contract. */
 void fb8_flush(void)
 {
     st7789_set_window(0, 0, FB8_WIDTH - 1, FB8_HEIGHT - 1);
@@ -83,10 +93,11 @@ void fb8_flush(void)
     CS_HIGH();
 }
 
-/* One display line worth of RGB565 bytes, built from the palette and
- * pushed out via DMA - much faster than fb8_flush(). */
+/** @brief One display line worth of RGB565 bytes, built from the palette
+ *         and pushed out via DMA - much faster than fb8_flush(). */
 static uint8_t fb8_linebuf[FB8_WIDTH * 2];
 
+/** @brief See fb8_flush_dma() in the header for the full contract. */
 void fb8_flush_dma(void)
 {
     st7789_set_window(0, 0, FB8_WIDTH - 1, FB8_HEIGHT - 1);

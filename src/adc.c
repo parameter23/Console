@@ -1,9 +1,14 @@
+/**
+ * @file adc.c
+ * @brief Implementation of the generic ADC1 wrapper (see adc.h).
+ */
 #include "adc.h"
 
 #include <libopencm3/stm32/rcc.h>
 #include <libopencm3/stm32/gpio.h>
 #include <libopencm3/stm32/adc.h>
 
+/** @brief See hal_adc_pin_setup() in the header for the full contract. */
 void hal_adc_pin_setup(uint32_t gpioport, uint16_t gpio_pin)
 {
     /* Caller is expected to have already enabled the GPIO port's clock,
@@ -16,6 +21,7 @@ void hal_adc_pin_setup(uint32_t gpioport, uint16_t gpio_pin)
     gpio_mode_setup(gpioport, GPIO_MODE_ANALOG, GPIO_PUPD_NONE, gpio_pin);
 }
 
+/** @brief See hal_adc_init() in the header for the full contract. */
 void hal_adc_init(void)
 {
     rcc_periph_clock_enable(RCC_ADC1);
@@ -26,6 +32,7 @@ void hal_adc_init(void)
     adc_power_on(ADC1);
 }
 
+/** @brief See hal_adc_read() in the header for the full contract. */
 uint16_t hal_adc_read(uint8_t channel)
 {
     uint8_t ch = channel;

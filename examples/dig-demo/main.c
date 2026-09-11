@@ -1,25 +1,28 @@
+/**
+ * @file main.c
+ * @brief Demo game built on the generic GameAPI (game.h/game.c). Shows
+ *        how a game plugs into game_run(): implement init()/update()/
+ *        draw() and hand them to game_run() in main(). No falling-rock
+ *        physics here - this is a walk-dig-collect demo to exercise
+ *        the tile map, sprites, sound and text modules end to end.
+ */
 #include "game.h"
 #include "framebuffer8.h"
 #include "sprite16.h"
 #include "text.h"
 #include "sfx.h"
 #include "music.h"
+#include "track.h"
 #include "sound.h"
 #include "joystick.h"
 #include "tiles.h"
 #include "tileset16.h"
 #include "levels.h"
 
-/*
- * Demo game built on the generic GameAPI (game.h/game.c). Shows how a
- * game plugs into game_run(): implement init()/update()/draw() and
- * hand them to game_run() in main(). No falling-rock physics here -
- * this is a walk-dig-collect demo to exercise the tile map, sprites,
- * sound and text modules end to end.
- */
+/** @brief Grid-move speed: milliseconds between player-move ticks. */
+#define TICK_MS  150
 
-#define TICK_MS  150  /* grid-move speed */
-
+/** @brief 16x16 player sprite (palette index 1 = white, 2 = red). */
 static const sprite16_t player_sprite = {
     .px = {
         {0,0,0,0,0,0,2,2,2,2,0,0,0,0,0,0},
@@ -44,7 +47,11 @@ static const sprite16_t player_sprite = {
 static int player_x, player_y;
 static uint32_t score;
 
-/* Minimal unsigned-int-to-decimal-string - no sprintf under -nostdlib. */
+/**
+ * @brief Minimal unsigned-int-to-decimal-string - no sprintf under -nostdlib.
+ * @param v   Value to convert.
+ * @param out Destination buffer; must hold at least 11 digits + NUL.
+ */
 static void utoa10(uint32_t v, char *out)
 {
     char tmp[12];
@@ -64,12 +71,19 @@ static void utoa10(uint32_t v, char *out)
     out[j] = 0;
 }
 
+/**
+ * @brief Appends a NUL-terminated string to dst at *pos, advancing *pos.
+ * @param dst Destination buffer.
+ * @param pos Current write offset into dst, updated in place.
+ * @param s   String to append.
+ */
 static void append(char *dst, int *pos, const char *s)
 {
     while (*s)
         dst[(*pos)++] = *s++;
 }
 
+/** @brief Draws the score HUD in the bottom-left corner. */
 static void draw_hud(void)
 {
     char line[32];
@@ -83,6 +97,7 @@ static void draw_hud(void)
     draw_text(4, FB8_HEIGHT - 10, line, 1);
 }
 
+/** @brief GameAPI init callback: starts audio and loads the level. */
 static void demo_init(void)
 {
     sfx_init();
@@ -105,6 +120,11 @@ static void demo_init(void)
     score = 0;
 }
 
+/**
+ * @brief Attempts to move the player by one tile, handling dirt digging,
+ *        diamond collection and steel/rock collision.
+ * @param dx, dy Direction to move, one of {-1, 0, 1} each.
+ */
 static void try_move(int dx, int dy)
 {
     int tx = player_x + dx;
@@ -126,6 +146,7 @@ static void try_move(int dx, int dy)
     player_y = ty;
 }
 
+/** @brief GameAPI update callback: moves the player from joystick input. */
 static void demo_update(const JoystickState *js, uint32_t tick_ms)
 {
     (void)tick_ms;
@@ -136,6 +157,7 @@ static void demo_update(const JoystickState *js, uint32_t tick_ms)
     else if (js->raw & JS_RIGHT) try_move(1, 0);
 }
 
+/** @brief GameAPI draw callback: renders the tile map, player and HUD. */
 static void demo_draw(void)
 {
     bd_sound_update();
@@ -152,6 +174,7 @@ static void demo_draw(void)
     draw_hud();
 }
 
+/** @brief The GameAPI table handed to game_run() in main(). */
 static const GameAPI demo_game = {
     .name   = "dig-demo",
     .init   = demo_init,
@@ -159,6 +182,7 @@ static const GameAPI demo_game = {
     .draw   = demo_draw,
 };
 
+/** @brief Entry point: runs the demo game via the generic GameAPI loop. */
 int main(void)
 {
     game_run(&demo_game, TICK_MS);

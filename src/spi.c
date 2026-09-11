@@ -1,3 +1,7 @@
+/**
+ * @file spi.c
+ * @brief Implementation of the shared SPI1 driver (see spi.h).
+ */
 #include "spi.h"
 
 #include <libopencm3/stm32/rcc.h>
@@ -5,7 +9,7 @@
 #include <libopencm3/stm32/spi.h>
 #include <libopencm3/stm32/dma.h>
 
-/* SPI1: SCK = PA5, MISO = PA6 (unused), MOSI = PA7, AF5 */
+/** @brief SPI1: SCK = PA5, MISO = PA6 (unused), MOSI = PA7, AF5. */
 static void spi1_gpio_setup(void)
 {
     rcc_periph_clock_enable(RCC_GPIOA);
@@ -15,6 +19,7 @@ static void spi1_gpio_setup(void)
     gpio_set_output_options(GPIOA, GPIO_OTYPE_PP, GPIO_OSPEED_50MHZ, GPIO5 | GPIO7);
 }
 
+/** @brief See spi1_setup() in the header for the full contract. */
 void spi1_setup(uint32_t baudrate_div)
 {
     rcc_periph_clock_enable(RCC_SPI1);
@@ -35,12 +40,14 @@ void spi1_setup(uint32_t baudrate_div)
     spi_enable(SPI1);
 }
 
+/** @brief See spi1_write8() in the header for the full contract. */
 void spi1_write8(uint8_t data)
 {
     spi_send(SPI1, data);
     spi_read(SPI1);
 }
 
+/** @brief See spi1_write_buf() in the header for the full contract. */
 void spi1_write_buf(const uint8_t *buf, uint32_t len)
 {
     for (uint32_t i = 0; i < len; i++) {
@@ -52,6 +59,7 @@ void spi1_write_buf(const uint8_t *buf, uint32_t len)
 
 static int dma_ready = 0;
 
+/** @brief Enables the DMA2 clock the first time it's needed; no-op after. */
 static void dma_init_once(void)
 {
     if (dma_ready) return;
@@ -60,6 +68,7 @@ static void dma_init_once(void)
     rcc_periph_clock_enable(RCC_DMA2);
 }
 
+/** @brief See spi1_write_buf_dma() in the header for the full contract. */
 void spi1_write_buf_dma(const uint8_t *buf, uint32_t len)
 {
     dma_init_once();

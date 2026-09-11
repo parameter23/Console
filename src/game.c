@@ -1,8 +1,13 @@
+/**
+ * @file game.c
+ * @brief Implementation of the generic GameAPI main loop (see game.h).
+ */
 #include "game.h"
 #include "clock.h"
 #include "st7789.h"
 #include "framebuffer8.h"
 
+/** @brief See game_run() in the header for the full contract. */
 void game_run(const GameAPI *game, uint32_t tick_ms)
 {
     clock_setup();

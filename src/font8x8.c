@@ -1,3 +1,7 @@
+/**
+ * @file font8x8.c
+ * @brief Glyph data for the 8x8 font (see font8x8.h).
+ */
 #include "font8x8.h"
 
 /*

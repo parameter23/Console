@@ -1,22 +1,33 @@
+/**
+ * @file clock.c
+ * @brief Implementation of the system clock and millisecond time base
+ *        (see clock.h).
+ */
 #include "clock.h"
 
 #include <libopencm3/stm32/rcc.h>
 #include <libopencm3/stm32/flash.h>
 #include <libopencm3/cm3/systick.h>
 
+/** @brief Millisecond counter incremented by sys_tick_handler(). */
 static volatile uint32_t ms_ticks = 0;
 
-/* Called from NVIC vector table (weak alias resolved by libopencm3 startup) */
+/**
+ * @brief SysTick interrupt handler (weak alias resolved by libopencm3's
+ *        startup code via the NVIC vector table). Not called directly.
+ */
 void sys_tick_handler(void)
 {
     ms_ticks++;
 }
 
+/** @brief See millis() in the header for the full contract. */
 uint32_t millis(void)
 {
     return ms_ticks;
 }
 
+/** @brief See delay_ms() in the header for the full contract. */
 void delay_ms(uint32_t ms)
 {
     uint32_t start = millis();
@@ -25,6 +36,7 @@ void delay_ms(uint32_t ms)
     }
 }
 
+/** @brief See clock_setup() in the header for the full contract. */
 void clock_setup(void)
 {
     /* HSE (25 MHz) -> PLL -> 100 MHz SYSCLK */
@@ -55,6 +67,7 @@ void clock_setup(void)
     rcc_apb2_frequency = 100000000;
 }
 
+/** @brief See systick_setup() in the header for the full contract. */
 void systick_setup(void)
 {
     /* 100000 ticks @ 100 MHz AHB = 1 ms */

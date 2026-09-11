@@ -1,6 +1,11 @@
+/**
+ * @file sprite16.c
+ * @brief Implementation of the sprite16_t blitter (see sprite16.h).
+ */
 #include "sprite16.h"
 #include "framebuffer8.h"
 
+/** @brief See draw_sprite16() in the header for the full contract. */
 void draw_sprite16(int x, int y, const sprite16_t *spr)
 {
     for (int sy = 0; sy < 16; sy++) {

@@ -1,3 +1,7 @@
+/**
+ * @file tileset16.c
+ * @brief Pixel data for the tileset (see tileset16.h).
+ */
 #include "tileset16.h"
 
 const sprite16_t tileset16[T_MAX] = {

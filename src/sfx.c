@@ -1,3 +1,7 @@
+/**
+ * @file sfx.c
+ * @brief Implementation of the pseudo-SID synth (see sfx.h).
+ */
 #include "sfx.h"
 #include "music.h"
 
@@ -50,6 +54,7 @@ static uint16_t sfx_divider = 0;
 /* ---------------------------------------------------------
  * Hardware-Init: TIM3 PWM + TIM2 Audio-Timer
  * --------------------------------------------------------- */
+/** @brief See sfx_init() in the header for the full contract. */
 void sfx_init(void)
 {
     /* GPIOA PA6 = TIM3_CH1 (AF2) */
@@ -113,6 +118,8 @@ void sfx_init(void)
  * interner 1-ms-Tick für Effekte + Musik
  * (wird aus sid_update über Teiler aufgerufen)
  * --------------------------------------------------------- */
+/** @brief Internal 1 ms tick for effects + music, called from
+ *         sid_update() via a sample-rate divider. */
 static void sfx_update_tick(void)
 {
     /* Effekte */
@@ -166,7 +173,7 @@ static void sfx_update_tick(void)
      music_update_1ms();
 }
 
-/* öffentliche Hülle, falls irgendwo noch aufgerufen */
+/** @brief See sfx_update_1ms() in the header for the full contract. */
 void sfx_update_1ms(void)
 {
     sfx_update_tick();
@@ -175,6 +182,9 @@ void sfx_update_1ms(void)
 /* ---------------------------------------------------------
  * SID-Mixer (20 kHz) – ruft alle 20 Ticks den 1-ms-Tick auf
  * --------------------------------------------------------- */
+/** @brief SID-style 20 kHz voice mixer; calls sfx_update_tick() every
+ *         20 samples (= 1 kHz) and writes the mixed sample to the PWM
+ *         output compare register. */
 static void sid_update(void)
 {
     /* 20 kHz / 20 = 1 kHz → SFX/Musik-Tick */
@@ -244,7 +254,8 @@ static void sid_update(void)
     timer_set_oc_value(SFX_TIMER, TIM_OC1, out);
 }
 
-/* TIM2-ISR */
+/** @brief TIM2 interrupt handler: fires at SID_SAMPLE_RATE (20 kHz) and
+ *         drives the mixer. Not called directly. */
 void tim2_isr(void)
 {
     if (timer_get_flag(TIM2, TIM_SR_UIF)) {
@@ -256,6 +267,7 @@ void tim2_isr(void)
 /* ---------------------------------------------------------
  * Musik (Voice 0)
  * --------------------------------------------------------- */
+/** @brief See sfx_play_freq() in the header for the full contract. */
 void sfx_play_freq(uint16_t freq)
 {
     if (freq == 0) {
@@ -274,6 +286,7 @@ void sfx_play_freq(uint16_t freq)
 /* ---------------------------------------------------------
  * Effekte (Voice 1)
  * --------------------------------------------------------- */
+/** @brief See sfx_play() in the header for the full contract. */
 void sfx_play(SfxType type)
 {
     sfx_current      = type;
@@ -336,6 +349,7 @@ void sfx_play(SfxType type)
 /* ---------------------------------------------------------
  * Alles stumm
  * --------------------------------------------------------- */
+/** @brief See sfx_stop() in the header for the full contract. */
 void sfx_stop(void)
 {
     for (int i = 0; i < SID_VOICES; i++) {

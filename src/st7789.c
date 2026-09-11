@@ -1,3 +1,12 @@
+/**
+ * @file st7789.c
+ * @brief Implementation of the ST7789 panel driver (see st7789.h).
+ *
+ * NOTE: this used to configure SPI1 itself (with a different baud-rate
+ * divider than hal/spi.c). That duplicate/conflicting init is gone now -
+ * st7789_init() just calls spi1_setup() once, like everything else that
+ * needs SPI1 should.
+ */
 #include "st7789.h"
 #include "spi.h"
 #include "clock.h"
@@ -5,13 +14,7 @@
 #include <libopencm3/stm32/rcc.h>
 #include <libopencm3/stm32/spi.h>
 
-/*
- * NOTE: this used to configure SPI1 itself (with a different baud-rate
- * divider than hal/spi.c). That duplicate/conflicting init is gone now -
- * st7789_init() just calls spi1_setup() once, like everything else that
- * needs SPI1 should.
- */
-
+/** @brief Configures the CS/DC/RST GPIOs used to talk to the panel. */
 static void gpio_setup(void)
 {
     rcc_periph_clock_enable(RCC_GPIOA);
@@ -24,6 +27,7 @@ static void gpio_setup(void)
     gpio_set_output_options(ST7789_DC_PORT, GPIO_OTYPE_PP, GPIO_OSPEED_2MHZ, ST7789_DC_PIN | ST7789_RST_PIN);
 }
 
+/** @brief See st7789_cmd() in the header for the full contract. */
 void st7789_cmd(uint8_t cmd)
 {
     CS_LOW();
@@ -32,6 +36,7 @@ void st7789_cmd(uint8_t cmd)
     CS_HIGH();
 }
 
+/** @brief See st7789_data() in the header for the full contract. */
 void st7789_data(uint8_t data)
 {
     CS_LOW();
@@ -40,6 +45,7 @@ void st7789_data(uint8_t data)
     CS_HIGH();
 }
 
+/** @brief Toggles the RST pin to hardware-reset the panel. */
 static void st7789_reset(void)
 {
     gpio_clear(ST7789_RST_PORT, ST7789_RST_PIN);
@@ -48,6 +54,7 @@ static void st7789_reset(void)
     delay_ms(20);
 }
 
+/** @brief See st7789_init() in the header for the full contract. */
 void st7789_init(void)
 {
     spi1_setup(SPI_CR1_BAUDRATE_FPCLK_DIV_2);
@@ -78,6 +85,7 @@ void st7789_init(void)
     st7789_cmd(0x29);              /* Display On             */
 }
 
+/** @brief See st7789_set_window() in the header for the full contract. */
 void st7789_set_window(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1)
 {
     st7789_cmd(0x2A);
@@ -91,6 +99,7 @@ void st7789_set_window(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1)
     st7789_cmd(0x2C);
 }
 
+/** @brief See st7789_draw_pixel() in the header for the full contract. */
 void st7789_draw_pixel(uint16_t x, uint16_t y, uint16_t color)
 {
     st7789_set_window(x, y, x, y);
@@ -102,6 +111,7 @@ void st7789_draw_pixel(uint16_t x, uint16_t y, uint16_t color)
     CS_HIGH();
 }
 
+/** @brief See st7789_fill_rect() in the header for the full contract. */
 void st7789_fill_rect(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t color)
 {
     st7789_set_window(x, y, x + w - 1, y + h - 1);

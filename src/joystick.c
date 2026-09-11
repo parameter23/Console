@@ -1,3 +1,7 @@
+/**
+ * @file joystick.c
+ * @brief Implementation of the digital/analog joystick driver (see joystick.h).
+ */
 #include "joystick.h"
 #include "adc.h"
 
@@ -10,6 +14,7 @@ static uint16_t js_adc_y = 2048;
 static uint32_t repeat_timer = 0;
 static uint8_t  last_raw = 0;
 
+/** @brief See joystick_init() in the header for the full contract. */
 void joystick_init(void)
 {
     rcc_periph_clock_enable(RCC_GPIOB);
@@ -23,6 +28,7 @@ void joystick_init(void)
     hal_adc_init();
 }
 
+/** @brief See joystick_update() in the header for the full contract. */
 JoystickState joystick_update(void)
 {
     JoystickState js = {0};
@@ -57,5 +63,7 @@ JoystickState joystick_update(void)
     return js;
 }
 
+/** @brief See joystick_get_adc_x() in the header for the full contract. */
 uint16_t joystick_get_adc_x(void) { return js_adc_x; }
+/** @brief See joystick_get_adc_y() in the header for the full contract. */
 uint16_t joystick_get_adc_y(void) { return js_adc_y; }
