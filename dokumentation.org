@@ -28,6 +28,7 @@ examples/
   grogs-revenge/          Arcade-Spiel angelehnt an "B.C. II: Grog's Revenge" (C64, 1984)
   scroller-demo/          Proof-of-Concept für echtes pixelweises Side-Scrolling
   invaders/               Space-Invaders-artiges Shoot-em-up mit animierten Sprites
+  nebelkrone/             Illustriertes Interactive-Fiction-Gamebook im Stil von DSA
 Makefile                 Delegiert an examples/*/Makefile
 Doxyfile                 Doxygen-Konfiguration (INPUT: src include examples)
 #+END_SRC
@@ -451,6 +452,49 @@ Pixelkoordinaten gezeichnet (=main.c= besteht fast nur aus =game.h=,
   Game-Over-Bildschirm durch, da =draw_stars()= als Erstes in
   =invaders_draw()= gezeichnet wird, noch vor dem State-Switch.
 
+** nebelkrone - illustriertes Interactive-Fiction-Gamebook
+Ein Rollenspiel-Gamebook im Stil der Solo-Abenteuer, die Das Schwarze
+Auge selbst als Heftchen veröffentlicht hat: nummerierte
+Entscheidungen statt Texteingabe (diese Hardware hat einen Joystick,
+keine Tastatur) und Eigenschaftsproben mit einem einzelnen W20 statt
+des vollen Pen-and-Paper-Regelwerks. Eine komplett eigene Geschichte
+("Die Nebelkrone") - keine Wiedergabe eines veröffentlichten
+DSA-Abenteuers, keine Schauplätze/Begriffe aus dem Franchise, nur an
+seiner Spielmechanik orientiert.
+
+- =story.h=/=story.c=: die gesamte Handlung ist ein Array von 15
+  =Scene=-Knoten (=SCENE_INTRO= .. =SCENE_END_LOSE=), die =main.c=s
+  Zustandsautomat abläuft. Vier Knotentypen: =NODE_TEXT= (Illustration
+  + Text + UP/DOWN+BTN-Auswahlmenü), =NODE_CHECK= (würfelt automatisch
+  eine von drei Heldeneigenschaften - MUT/KLUGHEIT/GEWANDTHEIT - gegen
+  einen W20 und verzweigt), =NODE_COMBAT= (rundenbasierter Kampf) und
+  =NODE_END_WIN=/=NODE_END_LOSE=.
+- =art.h=/=art.c=/=tileset16.c=: dieselbe Kachelraster-Technik, die
+  dig-demo/Zauberschloss/Grogs-Revenge für ihre Raumkarten nutzen, hier
+  aber als 20×5-Kachelraster (320×80px, oberes Bildschirmdrittel) für
+  acht vorkomponierte Illustrationen (Dorf, Sumpf, Turmruine innen/außen,
+  Kampf- und Siegkammer, Tod) statt einer begehbaren Karte -
+  =draw_scene_bg()= zeichnet einfach das zur aktuellen Szene gehörige
+  Raster.
+- Schaden ist zentral über =apply_damage()= verdrahtet: jede
+  Eigenschaftsprobe kann bei Misserfolg Lebenspunkte kosten, und wenn
+  das tödlich ist, springt =apply_damage()= sofort zu einer
+  universellen Todes-Szene mit einem zur jeweiligen Ursache passenden
+  Sterbetext (Ersaufen im Sumpf, einstürzende Bretter, Kampf verloren,
+  ...) - keine einzelne Szene muss ihr eigenes "Tod"-Ziel kennen.
+- Rundenbasierter Kampf (=do_combat_action()=) gegen den Moorschrat:
+  ATTACKE/FLIEHEN, plus ein optionaler dritter Menüpunkt TRANK, sobald
+  ein zuvor in einer Truhe gefundener Heiltrank (=FLAG_POTION=) im
+  Inventar ist - Item-Zustand direkt in der Kampf-UI sichtbar.
+- Item-/Story-Flags (=StoryFlag=, ein =uint32_t=-Bitfeld) für Fackel,
+  Heiltrank und die erbeutete Krone; das Fehlen der Fackel löst beim
+  Betreten des finsteren Turminneren eine feste Schadens-Strafe aus -
+  ein Grund, vorher beim Dorfältesten vorbeizuschauen, statt eine
+  weitere Kartenprüfung im Code zu brauchen.
+- Eigener, handgeschriebener Musik-Loop (=track.c=, nicht wie bei
+  dig-demo aus MIDI generiert) sowie sfx.h-Ereignisse für Treffer,
+  Fund, Gefahr und Tod.
+
 * Erweiterungsmöglichkeiten
 Realistische nächste Schritte, sortiert grob nach Aufwand:
 
@@ -468,6 +512,10 @@ Realistische nächste Schritte, sortiert grob nach Aufwand:
 - invaders: Bullet-vs-Bullet-Kollision (Alienschuss wird vom eigenen
   Schuss abgefangen), Highscore-Speicherung, mehr als ein Spieler-Schuss
   gleichzeitig ab höheren Wellen.
+- nebelkrone: weitere Kapitel/Verzweigungen, ein zweiter Gegnertyp,
+  Inventar-Anzeige im HUD, Speicherstand für den Spielfortschritt
+  zwischen Sitzungen (siehe Speicherstand-Punkt unten - beide Beispiele
+  könnten sich dieselbe Persistenz-Lösung teilen).
 - SD-Karten-Anbindung über =spi.h= (aktuell nicht implementiert, siehe
   Pinbelegung oben) - z. B. für Level- oder Sprite-Daten von Karte statt
   aus dem Flash.
@@ -478,7 +526,7 @@ Realistische nächste Schritte, sortiert grob nach Aufwand:
 
 * Schlusswort
 Dieses Dokument beschreibt die Engine (Takt, Display, Framebuffer,
-Sprites, Text, Joystick, Audio, GameAPI) sowie die fünf Beispiele, die
+Sprites, Text, Joystick, Audio, GameAPI) sowie die sechs Beispiele, die
 aktuell darauf aufbauen. Bei Erweiterungen: neue Engine-Funktionalität
 gehört nach =include/=/=src/= (allgemeingültig, kein Spielwissen), alles
 Spielspezifische in einen neuen oder bestehenden Ordner unter
