@@ -1,5 +1,7 @@
-#ifndef CLOCK_H
-#define CLOCK_H
+#ifndef JOYSTICK_H
+#define JOYSTICK_H
+
+#include <stdint.h>
 
 // Digitale Richtungen (GPIOB)
 #define JS_PORT        GPIOB
@@ -23,18 +25,18 @@
 #define JS_ADC_Y_PORT  GPIOA
 #define JS_ADC_Y_PIN   GPIO1   // PA1 = ADC1_IN1
 
-// SPI1 LCD
-#define CS_LOW()   gpio_clear(GPIOA, GPIO4)
-#define CS_HIGH()  gpio_set(GPIOA, GPIO4)
-#define DC_DATA()  gpio_set(GPIOA, GPIO3)
-#define DC_CMD()   gpio_clear(GPIOA, GPIO3)
+typedef struct {
+    uint8_t raw;       // aktueller Zustand
+    uint8_t pressed;   // Flanke: gedrückt
+    uint8_t released;  // Flanke: losgelassen
+    uint8_t repeat;    // Auto-Repeat
+} JoystickState;
 
-// SPI1 SD-Card
-#define SDCS_LOW()   gpio_clear(GPIOB, GPIO5)
-#define SDCS_HIGH()  gpio_set(GPIOB, GPIO5)
+void joystick_init(void);
+JoystickState joystick_update(void);
 
-#define SPI1_SCK PA5
-#define SPI1_MISO PA6
-#define SPI1_MOSI PA7
+// ADC Getter
+uint16_t joystick_get_adc_x(void);
+uint16_t joystick_get_adc_y(void);
 
 #endif

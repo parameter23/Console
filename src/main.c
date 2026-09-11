@@ -1,146 +1,166 @@
+#include "game.h"
+#include "framebuffer8.h"
+#include "sprite16.h"
+#include "text.h"
+#include "sfx.h"
+#include "music.h"
+#include "sound.h"
+#include "joystick.h"
+#include "tiles.h"
+#include "tileset16.h"
+#include "levels.h"
 
-/**
- * @file main.c
- * @brief Hauptprogramm der STM32-Anwendung.
- *
- * Dieses Modul initialisiert die Systemuhr, den SysTick-Timer sowie
- * den GPIO-Port C und lässt anschließend eine LED an GPIOC Pin 13
- * periodisch blinken.
- *
- * Die Anwendung verwendet libopencm3 für den direkten Zugriff auf
- * die STM32-Hardware.
- *
- * @author
- * @date 2026-09-04
- *
- * @details
- * Programmablauf:
- * - Initialisierung der Systemtakt-Konfiguration über clock_setup().
- * - Initialisierung des SysTick-Timers über systick_setup().
- * - Aktivierung des Peripherietakts für GPIOC.
- * - Konfiguration von GPIOC Pin 13 als Push-Pull-Ausgang ohne Pull-Up
- *   bzw. Pull-Down.
- * - Setzen des Ausgangs auf HIGH.
- * - Periodisches Umschalten des Ausgangszustands im Abstand von 500 ms.
- *
- * Dadurch entsteht ein Blinksignal mit einer Periodendauer von
- * ungefähr 1 Sekunde, sofern delay_ms() die angegebene Verzögerung
- * von 500 ms korrekt einhält.
+/*
+ * Demo game built on the generic GameAPI (game.h/game.c). Shows how a
+ * game plugs into game_run(): implement init()/update()/draw() and
+ * hand them to game_run() in main(). No falling-rock physics here -
+ * this is a walk-dig-collect demo to exercise the tile map, sprites,
+ * sound and text modules end to end.
  */
 
-#include <libopencm3/stm32/gpio.h>
-#include <libopencm3/stm32/rcc.h>
-#include <libopencm3/cm3/systick.h>
+#define TICK_MS  150  /* grid-move speed */
 
-#include "clock.h"
+static const sprite16_t player_sprite = {
+    .px = {
+        {0,0,0,0,0,0,2,2,2,2,0,0,0,0,0,0},
+        {0,0,0,0,0,2,2,2,2,2,2,0,0,0,0,0},
+        {0,0,0,0,2,2,1,2,2,1,2,2,0,0,0,0},
+        {0,0,0,0,2,2,2,2,2,2,2,2,0,0,0,0},
+        {0,0,0,0,2,2,2,2,2,2,2,2,0,0,0,0},
+        {0,0,0,2,2,2,2,2,2,2,2,2,2,0,0,0},
+        {0,0,2,2,2,2,2,2,2,2,2,2,2,2,0,0},
+        {0,0,2,2,2,2,2,2,2,2,2,2,2,2,0,0},
+        {0,0,0,2,2,2,2,2,2,2,2,2,2,0,0,0},
+        {0,0,0,0,2,2,2,2,2,2,2,2,0,0,0,0},
+        {0,0,0,0,0,2,2,2,2,2,2,0,0,0,0,0},
+        {0,0,0,0,0,2,2,0,0,2,2,0,0,0,0,0},
+        {0,0,0,0,0,2,2,0,0,2,2,0,0,0,0,0},
+        {0,0,0,0,0,2,2,0,0,2,2,0,0,0,0,0},
+        {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+        {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+    }
+};
 
+static int player_x, player_y;
+static uint32_t score;
 
-/**
- * @brief Einstiegspunkt des STM32-Programms.
- *
- * Initialisiert zunächst die für die Anwendung benötigten
- * Systemkomponenten und konfiguriert anschließend GPIOC Pin 13
- * als digitalen Ausgang.
- *
- * Nach der Initialisierung wird der GPIO-Pin in einer Endlosschleife
- * alle 500 ms zwischen HIGH und LOW umgeschaltet. Ist an diesem Pin
- * eine LED angeschlossen, führt dies zu einem periodischen Blinken.
- *
- * @return int
- *         Wird bei einer Embedded-Anwendung normalerweise nicht
- *         erreicht, da das Programm dauerhaft in der Endlosschleife
- *         verbleibt.
- *
- * @note
- * GPIOC muss vor der Konfiguration des Pins durch
- * rcc_periph_clock_enable() aktiviert werden.
- *
- * @note
- * Die konkrete Funktion von GPIOC Pin 13 hängt von der verwendeten
- * STM32-Hardware und der Beschaltung der LED ab. Bei vielen
- * STM32-Entwicklungsboards ist an diesem Pin eine integrierte LED
- * angeschlossen.
- */
+/* Minimal unsigned-int-to-decimal-string - no sprintf under -nostdlib. */
+static void utoa10(uint32_t v, char *out)
+{
+    char tmp[12];
+    int i = 0;
+    if (v == 0) {
+        out[0] = '0';
+        out[1] = 0;
+        return;
+    }
+    while (v > 0 && i < 11) {
+        tmp[i++] = (char)('0' + (v % 10));
+        v /= 10;
+    }
+    int j = 0;
+    while (i > 0)
+        out[j++] = tmp[--i];
+    out[j] = 0;
+}
+
+static void append(char *dst, int *pos, const char *s)
+{
+    while (*s)
+        dst[(*pos)++] = *s++;
+}
+
+static void draw_hud(void)
+{
+    char line[32];
+    char num[12];
+    int p = 0;
+
+    append(line, &p, "SCORE ");
+    utoa10(score, num);
+    append(line, &p, num);
+    line[p] = 0;
+    draw_text(4, FB8_HEIGHT - 10, line, 1);
+}
+
+static void demo_init(void)
+{
+    sfx_init();
+    music_init(boulder_track);
+
+    level_load(0);
+
+    player_x = 1;
+    player_y = 1;
+    for (int y = 0; y < MAP_H; y++) {
+        for (int x = 0; x < MAP_W; x++) {
+            if (get_tile(x, y) == T_PLAYER_SPAWN) {
+                player_x = x;
+                player_y = y;
+                set_tile(x, y, T_EMPTY);
+            }
+        }
+    }
+
+    score = 0;
+}
+
+static void try_move(int dx, int dy)
+{
+    int tx = player_x + dx;
+    int ty = player_y + dy;
+    uint8_t t = get_tile(tx, ty);
+
+    if (t == T_STEEL || t == T_ROCK)
+        return;
+
+    if (t == T_DIAMOND) {
+        score++;
+        bd_sound_play(SND_DIAMOND);
+    } else {
+        bd_sound_play(SND_STEP);
+    }
+
+    set_tile(tx, ty, T_EMPTY);
+    player_x = tx;
+    player_y = ty;
+}
+
+static void demo_update(const JoystickState *js, uint32_t tick_ms)
+{
+    (void)tick_ms;
+
+    if (js->raw & JS_UP)         try_move(0, -1);
+    else if (js->raw & JS_DOWN)  try_move(0, 1);
+    else if (js->raw & JS_LEFT)  try_move(-1, 0);
+    else if (js->raw & JS_RIGHT) try_move(1, 0);
+}
+
+static void demo_draw(void)
+{
+    bd_sound_update();
+
+    for (int y = 0; y < MAP_H; y++) {
+        for (int x = 0; x < MAP_W; x++) {
+            uint8_t t = get_tile(x, y);
+            draw_sprite16(x * 16, y * 16, &tileset16[t]);
+        }
+    }
+
+    draw_sprite16(player_x * 16, player_y * 16, &player_sprite);
+
+    draw_hud();
+}
+
+static const GameAPI demo_game = {
+    .name   = "dig-demo",
+    .init   = demo_init,
+    .update = demo_update,
+    .draw   = demo_draw,
+};
+
 int main(void)
 {
-    /**
-     * @brief Initialisierung der Systemtakt-Konfiguration.
-     *
-     * clock_setup() konfiguriert den System- bzw. Peripherietakt
-     * entsprechend der projektspezifischen Einstellungen.
-     */
-    clock_setup();
-
-    /**
-     * @brief Initialisierung des SysTick-Timers.
-     *
-     * Der SysTick-Timer wird für zeitbasierte Funktionen wie
-     * delay_ms() verwendet.
-     */
-    systick_setup();
-
-    /**
-     * @brief Aktiviert den Takt für GPIOC.
-     *
-     * STM32-GPIO-Peripherie muss zunächst mit einem Peripherietakt
-     * versorgt werden, bevor die Register des GPIO-Ports verwendet
-     * werden können.
-     */
-    rcc_periph_clock_enable(RCC_GPIOC);
-
-    /**
-     * @brief Konfiguriert GPIOC Pin 13 als Ausgang.
-     *
-     * GPIOC Pin 13 wird als digitaler Ausgang ohne internen Pull-Up
-     * oder Pull-Down-Widerstand konfiguriert.
-     *
-     * @param GPIOC       GPIO-Port C
-     * @param GPIO_MODE_OUTPUT
-     *                    Betriebsart als digitaler Ausgang
-     * @param GPIO_PUPD_NONE
-     *                    Keine internen Pull-Up-/Pull-Down-Widerstände
-     * @param GPIO13      Zu konfigurierender Pin 13
-     */
-    gpio_mode_setup(
-        GPIOC,
-        GPIO_MODE_OUTPUT,
-        GPIO_PUPD_NONE,
-        GPIO13
-    );
-
-    /**
-     * @brief Setzt GPIOC Pin 13 auf HIGH.
-     *
-     * Der Ausgang wird initial auf HIGH gesetzt, bevor die
-     * Blinkschleife beginnt.
-     */
-    gpio_set(GPIOC, GPIO13);
-
-    /**
-     * @brief Endlosschleife zum Erzeugen des Blinksignals.
-     *
-     * Der Zustand von GPIOC Pin 13 wird kontinuierlich umgeschaltet.
-     * Nach jedem Umschalten wartet das Programm 500 ms.
-     *
-     * Dadurch wird der Ausgang alle 500 ms zwischen HIGH und LOW
-     * gewechselt. Ein vollständiger Blinkzyklus dauert damit
-     * ungefähr 1000 ms bzw. 1 Sekunde.
-     */
-    while (1)
-    {
-        /**
-         * @brief Schaltet GPIOC Pin 13 in den jeweils anderen Zustand.
-         *
-         * HIGH wird zu LOW und LOW wird zu HIGH.
-         */
-        gpio_toggle(GPIOC, GPIO13);
-
-        /**
-         * @brief Wartet 500 Millisekunden.
-         *
-         * Die Verzögerung basiert auf der zuvor initialisierten
-         * SysTick-Konfiguration.
-         */
-        delay_ms(500);
-    }
+    game_run(&demo_game, TICK_MS);
+    return 0;
 }
