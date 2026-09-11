@@ -282,12 +282,13 @@ uint16_t joystick_get_adc_y(void);
 #+END_SRC
 
 Fünf digitale Tasten (UP/DOWN/LEFT/RIGHT/BTN, active low mit Pull-Up)
-plus zwei analoge Achsen. Alle vier Beispiele nutzen ausschließlich die
-fünf digitalen Tasten:
+plus zwei analoge Achsen.
 
-- UP/DOWN/LEFT/RIGHT/den Analogstick nutzt bislang kein Beispiel für
-  Bewegung - er steht als Erweiterung offen (siehe
-  [[*Erweiterungsmöglichkeiten]]).
+- invaders nutzt als einziges Beispiel die analoge X-Achse
+  (=joystick_get_adc_x()=) für die Bewegung - proportional mit
+  Totzone statt der binären Pfeiltasten, siehe
+  [[*invaders - Space-Invaders-artiges Shoot-em-up]]. Die übrigen vier
+  Beispiele nutzen ausschließlich die fünf digitalen Tasten.
 - In dig-demo, Zauberschloss und Grogs Revenge bewegen die Pfeiltasten
   die Spielfigur um genau ein Tile pro Logik-Tick; BTN löst eine
   kontextabhängige Aktion auf dem Feld aus, dem die Figur zugewandt ist
@@ -410,6 +411,12 @@ Klassisches Formations-Shoot-em-up im Stil des Arcade-Originals von
 Pixelkoordinaten gezeichnet (=main.c= besteht fast nur aus =game.h=,
 =sprite16.h=, =text.h=, =sfx.h=, =joystick.h=).
 
+- Steuerung über die analoge X-Achse des Sticks statt der Pfeiltasten
+  (=analog_move_delta()=): Totzone um die Mittelstellung (2048 von
+  0..4095, Ruhelage der meisten Joystick-Module) absorbiert Zittern im
+  Stillstand, der restliche Weg wird linear auf bis zu
+  =PLAYER_MAX_SPEED= px/Tick abgebildet - proportionale statt
+  binärer An/Aus-Bewegung. BTN (digital) feuert weiterhin.
 - Drei Alien-Typen (Tintenfisch/Krabbe/Krake, je nach Reihe 10/20/30
   Punkte) mit je *zwei Animationsframes*, die bei jedem
   Formations-Schritt umgeschaltet werden (=alien_anim_frame=) -
@@ -447,8 +454,9 @@ Pixelkoordinaten gezeichnet (=main.c= besteht fast nur aus =game.h=,
 * Erweiterungsmöglichkeiten
 Realistische nächste Schritte, sortiert grob nach Aufwand:
 
-- Analogstick (=joystick_get_adc_x/y()=) für Bewegung nutzen - bisher
-  nutzt kein Beispiel die Achsen, nur die fünf Digitaltasten.
+- Analogstick auch in den übrigen Beispielen für Bewegung nutzen -
+  invaders macht es für die X-Achse bereits vor (=analog_move_delta()=),
+  die Y-Achse ist noch ungenutzt.
 - grogs-revenge: zweiter Gegnertyp (Tiredactyl), dunkle Höhlen-Level
   (Lichtkegel um die Spielfigur statt volle Sichtbarkeit), echtes
   Scrolling innerhalb eines Bergs (könnte scroller-demos Kamera-Technik

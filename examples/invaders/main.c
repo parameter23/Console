@@ -9,9 +9,11 @@
  *        between the player and the aliens, and a bonus UFO occasionally
  *        crosses the top of the screen.
  *
- * Controls: LEFT/RIGHT move the cannon, BTN fires (one shot in flight at
- * a time, as in the original). Survive as many waves as possible; the
- * game ends when you run out of lives or the aliens reach the shields.
+ * Controls: the analog stick's X axis steers the cannon (proportional
+ * speed, deadzone near center - see analog_move_delta()), BTN fires (one
+ * shot in flight at a time, as in the original). Survive as many waves
+ * as possible; the game ends when you run out of lives or the aliens
+ * reach the shields.
  *
  * The on-screen font only covers ASCII 32..127 (see font8x8.c), so all
  * German text here is written without umlauts/ß (UE/OE/AE/SS).
@@ -40,9 +42,17 @@
 
 /* --- Player --- */
 #define PLAYER_Y            (FB8_HEIGHT - 26)
-#define PLAYER_SPEED        4
 #define PLAYER_LIVES_START  3
 #define PLAYER_EXPLODE_TICKS 15
+
+/* Analog stick: PA0/ADC1_IN0 rests near mid-scale (2048 of 0..4095) on a
+ * standard joystick module; JS_X_DEADZONE absorbs resting jitter, and the
+ * remaining travel is mapped linearly to a steering speed of up to
+ * PLAYER_MAX_SPEED px/tick - full deflection = full speed, proportional
+ * in between, instead of the on/off digital-button motion. */
+#define JS_X_CENTER      2048
+#define JS_X_DEADZONE    300
+#define PLAYER_MAX_SPEED 6
 
 /* --- Bullets --- */
 #define PLAYER_BULLET_SPEED  10
@@ -735,14 +745,33 @@ static void alien_bullets_update(void)
     }
 }
 
+/**
+ * @brief Analog steering speed for the current stick deflection: 0 inside
+ *        the deadzone, scaling linearly up to +/-PLAYER_MAX_SPEED at full
+ *        travel either side of center.
+ */
+static int analog_move_delta(void)
+{
+    int v = (int)joystick_get_adc_x() - JS_X_CENTER;
+
+    if (v > -JS_X_DEADZONE && v < JS_X_DEADZONE)
+        return 0;
+    v += (v > 0) ? -JS_X_DEADZONE : JS_X_DEADZONE;
+
+    int range = JS_X_CENTER - JS_X_DEADZONE;
+    if (v > range) v = range;
+    if (v < -range) v = -range;
+
+    return (v * PLAYER_MAX_SPEED) / range;
+}
+
 /** @brief Runs one gameplay tick: input, aliens, bullets, UFO, collisions. */
 static void play_tick(const JoystickState *js, uint32_t tick_ms)
 {
     if (player_explode_ticks > 0) {
         player_explode_ticks--;
     } else {
-        if (js->raw & JS_LEFT)  player_x -= PLAYER_SPEED;
-        if (js->raw & JS_RIGHT) player_x += PLAYER_SPEED;
+        player_x += analog_move_delta();
         if (player_x < 0) player_x = 0;
         if (player_x > FB8_WIDTH - 16) player_x = FB8_WIDTH - 16;
 
@@ -823,7 +852,7 @@ static void draw_titel(void)
 {
     draw_center(40,  "WELTRAUM-INVASOREN", 5);
     draw_center(76,  "VERTEIDIGE DIE ERDE VOR DEN ALIENS", 15);
-    draw_center(110, "LINKS/RECHTS: BEWEGEN", 1);
+    draw_center(110, "ANALOGSTICK: BEWEGEN", 1);
     draw_center(126, "KNOPF: SCHIESSEN", 1);
     draw_center(160, "NUTZE DIE SCHUTZSCHILDE UND", 2);
     draw_center(176, "ZERSTOERE JEDE WELLE ALIENS", 2);
