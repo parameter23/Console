@@ -49,24 +49,34 @@ void fb8_fill_rect(int x, int y, int w, int h, uint8_t color)
 /** @brief See fb8_init_palette() in the header for the full contract. */
 void fb8_init_palette(void)
 {
-    /* C64-style base palette in the first 16 slots */
+    /* C64-style base palette in the first 16 slots.
+     *
+     * Indices 3/9/10/11/12/13/15 used to be filled with the same hex
+     * digit repeated across all three RGB565 fields (e.g. 0x4444 for
+     * "Dark Grey"). Because RGB565 splits unevenly (5/6/5 bits), a
+     * repeated-digit value does *not* give equal R/G/B brightness - it
+     * skews green, so those seven entries actually rendered as
+     * olive/mint/mauve instead of their labelled colour. Fixed by
+     * picking each colour's intended 8-bit RGB and re-encoding it
+     * properly; the other nine entries already rendered correctly and
+     * are unchanged. */
     static const uint16_t base_palette[16] = {
         0x0000, /* 0: Black       */
         0xFFFF, /* 1: White       */
         0x8800, /* 2: Red         */
-        0x8FE7, /* 3: Cyan        */
+        0x0639, /* 3: Cyan        */
         0xC897, /* 4: Purple      */
         0x04A8, /* 5: Green       */
         0x0015, /* 6: Blue        */
         0xEEE7, /* 7: Yellow      */
         0xDD86, /* 8: Orange      */
-        0x6440, /* 9: Brown       */
-        0xFBE7, /* 10: Light Red  */
-        0x4444, /* 11: Dark Grey  */
-        0x7777, /* 12: Grey       */
-        0x8FE6, /* 13: Light Green*/
+        0x6222, /* 9: Brown       */
+        0xFB2C, /* 10: Light Red  */
+        0x4228, /* 11: Dark Grey  */
+        0x8C51, /* 12: Grey       */
+        0x8FF1, /* 13: Light Green*/
         0x777F, /* 14: Light Blue */
-        0xBBBB  /* 15: Light Grey */
+        0xBDD7  /* 15: Light Grey */
     };
 
     for (int i = 0; i < 16; i++)
