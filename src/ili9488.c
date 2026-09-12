@@ -13,6 +13,7 @@
 static void gpio_setup(void)
 {
     rcc_periph_clock_enable(RCC_GPIOA);
+    rcc_periph_clock_enable(RCC_GPIOB);
 
     gpio_mode_setup(ILI9488_CS_PORT, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE, ILI9488_CS_PIN);
     gpio_set_output_options(ILI9488_CS_PORT, GPIO_OTYPE_PP, GPIO_OSPEED_50MHZ, ILI9488_CS_PIN);

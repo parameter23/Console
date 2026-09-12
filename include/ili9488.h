@@ -23,6 +23,13 @@
  *    needs MX/MY mirror bits flipped depends on how the panel is
  *    physically mounted/wired - check on real hardware and adjust
  *    ILI9488_MADCTL below if the image comes up mirrored/rotated.
+ *
+ * CS is PB0, not PA4: the BlackPill board's onboard SOI8 footprint for
+ * a W25Qxx SPI flash chip is hard-wired to PA4 (CS)/PA5 (SCK)/PA6
+ * (MISO)/PA7 (MOSI) - the same SPI1 bus this display uses. Sharing
+ * SCK/MISO/MOSI between two SPI slaves is fine, but each device needs
+ * its own CS, so the display's CS moved off PA4 to leave it free for
+ * the flash chip (see w25q128.h).
  */
 #ifndef DISPLAY_ILI9488_H
 #define DISPLAY_ILI9488_H
@@ -30,9 +37,9 @@
 #include <stdint.h>
 #include <libopencm3/stm32/gpio.h>
 
-/* Display control pins: CS = PA4, DC = PA3, RST = PA2 */
-#define ILI9488_CS_PORT   GPIOA
-#define ILI9488_CS_PIN    GPIO4
+/* Display control pins: CS = PB0, DC = PA3, RST = PA2 */
+#define ILI9488_CS_PORT   GPIOB
+#define ILI9488_CS_PIN    GPIO0
 #define ILI9488_DC_PORT   GPIOA
 #define ILI9488_DC_PIN    GPIO3
 #define ILI9488_RST_PORT  GPIOA

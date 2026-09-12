@@ -9,13 +9,15 @@
 #include <libopencm3/stm32/spi.h>
 #include <libopencm3/stm32/dma.h>
 
-/** @brief SPI1: SCK = PA5, MISO = PA6 (unused), MOSI = PA7, AF5. */
+/** @brief SPI1: SCK = PA5, MISO = PA6, MOSI = PA7, AF5. */
 static void spi1_gpio_setup(void)
 {
     rcc_periph_clock_enable(RCC_GPIOA);
 
-    gpio_mode_setup(GPIOA, GPIO_MODE_AF, GPIO_PUPD_NONE, GPIO5 | GPIO7);
-    gpio_set_af(GPIOA, GPIO_AF5, GPIO5 | GPIO7);
+    gpio_mode_setup(GPIOA, GPIO_MODE_AF, GPIO_PUPD_NONE, GPIO5 | GPIO6 | GPIO7);
+    gpio_set_af(GPIOA, GPIO_AF5, GPIO5 | GPIO6 | GPIO7);
+    /* MISO is an input in master mode - output speed only matters for
+     * SCK/MOSI, which this MCU actually drives. */
     gpio_set_output_options(GPIOA, GPIO_OTYPE_PP, GPIO_OSPEED_50MHZ, GPIO5 | GPIO7);
 }
 
@@ -40,11 +42,17 @@ void spi1_setup(uint32_t baudrate_div)
     spi_enable(SPI1);
 }
 
+/** @brief See spi1_xfer8() in the header for the full contract. */
+uint8_t spi1_xfer8(uint8_t data)
+{
+    spi_send(SPI1, data);
+    return spi_read(SPI1);
+}
+
 /** @brief See spi1_write8() in the header for the full contract. */
 void spi1_write8(uint8_t data)
 {
-    spi_send(SPI1, data);
-    spi_read(SPI1);
+    spi1_xfer8(data);
 }
 
 /** @brief See spi1_write_buf() in the header for the full contract. */
@@ -52,6 +60,14 @@ void spi1_write_buf(const uint8_t *buf, uint32_t len)
 {
     for (uint32_t i = 0; i < len; i++) {
         spi1_write8(buf[i]);
+    }
+}
+
+/** @brief See spi1_read_buf() in the header for the full contract. */
+void spi1_read_buf(uint8_t *buf, uint32_t len)
+{
+    for (uint32_t i = 0; i < len; i++) {
+        buf[i] = spi1_xfer8(0xFF);
     }
 }
 
