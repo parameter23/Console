@@ -69,37 +69,67 @@ Kopie - =git submodule update --init= nach dem Klonen nicht vergessen.
 ** Übersicht
 | Funktion          | Pin  | Richtung | Peripherie      | Beschreibung             |
 |-------------------+------+----------+-----------------+--------------------------|
-| ILI9488 CS        | PA4  | Output   | GPIO            | Chip Select LCD          |
+| ILI9488 CS        | PB0  | Output   | GPIO            | Chip Select LCD          |
 | ILI9488 DC        | PA3  | Output   | GPIO            | Data/Command             |
 | ILI9488 RESET     | PA2  | Output   | GPIO            | Display Reset            |
-| SPI1 SCK          | PA5  | AF5      | SPI1            | Display-Takt             |
-| SPI1 MOSI         | PA7  | AF5      | SPI1            | Display-Daten            |
-| SPI1 MISO         | PA6  | -        | SPI1 (unbenutzt) | frei                     |
+| SPI1 SCK          | PA5  | AF5      | SPI1            | Takt, geteilt Display/Flash |
+| SPI1 MOSI         | PA7  | AF5      | SPI1            | Daten, geteilt Display/Flash |
+| SPI1 MISO         | PA6  | AF5      | SPI1            | Daten (nur vom Flash genutzt, Display schreibt nur) |
+| W25Q128 CS        | PA4  | Output   | GPIO            | Chip Select Flash - BlackPill-Onboard-SOI8-Footprint |
 | Audio PWM Out     | PB4  | AF2      | TIM3_CH1        | PWM-Audio (bewusst *nicht* PA6 - lag dort direkt zwischen SPI1 SCK/MOSI und hat den Display-Link per Übersprechen gestört, siehe =include/sfx.h=) |
 | Joystick UP       | PB13 | Input    | GPIO            | Pull-Up                 |
 | Joystick DOWN     | PB15 | Input    | GPIO            | Pull-Up                 |
 | Joystick LEFT     | PB14 | Input    | GPIO            | Pull-Up                 |
 | Joystick RIGHT    | PB10 | Input    | GPIO            | Pull-Up                 |
 | Joystick BUTTON   | PB12 | Input    | GPIO            | Pull-Up                 |
+| Joystick SELECT   | PB1  | Input    | GPIO            | Pull-Up                 |
+| Joystick START    | PB5  | Input    | GPIO            | Pull-Up                 |
 | Joystick ADC X    | PA0  | Analog   | ADC1_IN0        | X-Achse                 |
 | Joystick ADC Y    | PA1  | Analog   | ADC1_IN1        | Y-Achse                 |
 
 Alle Konstanten liegen in den jeweiligen Modul-Headern
-(=include/ili9488.h=, =include/spi.h=, =include/sfx.h=,
-=include/joystick.h=) - dort nachschlagen, nicht hier, falls sich mal
-etwas ändert.
+(=include/ili9488.h=, =include/spi.h=, =include/w25q128.h=,
+=include/sfx.h=, =include/joystick.h=) - dort nachschlagen, nicht hier,
+falls sich mal etwas ändert.
 
 ** Hinweise
-- Alle Display-/Audio-/SPI-Pins liegen auf Port A, alle Joystick-Buttons
-  auf Port B.
-- Audio-PWM (PA6) nutzt TIM3_CH1 → APB1-Timer (verdoppelte Clock).
+- SPI1 (SCK/MISO/MOSI = PA5/PA6/PA7) wird von *zwei* Geräten mit
+  getrennter CS-Leitung geteilt: Display (CS PB0) und der optionale
+  W25Q128-Flash auf dem BlackPill-Onboard-Footprint (CS PA4, fest von
+  der Platine vorgegeben - deshalb liegt die Display-CS bewusst *nicht*
+  mehr auf PA4). Es gibt keine Bus-Arbitrierung über eine einzelne
+  Transaktion hinaus - passt, solange (wie aktuell) alles aus einer
+  einzigen Bare-Metal-Hauptschleife läuft und nichts SPI1 nebenläufig
+  anfasst.
+- Audio-PWM (PB4) nutzt TIM3_CH1 → APB1-Timer (verdoppelte Clock).
 - Joystick-Buttons sind *active low* (Pull-Ups); =JS_PORT=/=JS_*_PIN=
-  in =joystick.h=.
+  in =joystick.h=. SELECT/START liegen bewusst auf PB1/PB5 statt auf
+  den ebenfalls freien PB2 (BOOT1 - typischerweise fest gegen GND
+  verdrahtet) oder PB3 (JTDO/TRACESWO).
 - ADC-Kanäle nutzen 12-Bit-Auflösung, Sample-Time 144 Zyklen
   (=adc.c=, =ADC_SMPR_SMP_144CYC=).
-- Eine SD-Karten-Anbindung ist *nicht* implementiert (kein Treiber im
-  Quellbaum) - falls das Board dafür verdrahtet ist, wäre das eine
-  Erweiterung über =spi.h= (siehe [[*Erweiterungsmöglichkeiten]]).
+- Eine SD-Karten-Anbindung ist *nicht* implementiert. Für externen
+  Speicher gibt es stattdessen =include/w25q128.h= (Onboard-SPI-Flash,
+  siehe oben) - kein Dateisystem, nur adressierte Roh-Reads/-Writes.
+
+* Pinbelegung 3,5" RPi LCD 480-320 pixel
+Pin	Funktion	Beschreibung
+1, 17	3.3V	Power positive (3.3V power input)
+2, 4	5V	Power positive (5V power input)
+3, 5, 7, 8, 10, 12, 13, 15, 16	NC	NC
+6, 9, 14, 20, 25	GND	Ground
+11	TP_IRQ	Touch Panel interrupt, low level while the Touch Panel detects touching
+18	LCD_RS	Instruction/Data Register selection
+19	LCD_SI / TP_SI	SPI data input of LCD/Touch Panel
+21	TP_SO	SPI data output of Touch Panel
+22	RST	Reset
+23	LCD_SCK / TP_SCK	SPI clock of LCD/Touch Panel
+24	LCD_CS	LCD chip selection, low active
+26	TP_CS	Touch Panel chip selection, low active
+
+
+ILI9486
+
 
 * Systemstart & Zeitbasis (=clock.h=/=clock.c=)
 ** clock_setup()
@@ -274,20 +304,57 @@ COLMOD/Pixelformat (=ili9488_init()=, =fb8_flush()=/=fb8_flush_dma()=
 in =src/framebuffer8.c=) der erste Ansatzpunkt bei Bildfehlern.
 
 * SPI-Abstraktion (=include/spi.h=)
-Ein einziger, geteilter SPI1-Treiber - alles, was SPI1 nutzt (aktuell
-nur das Display), ruft =spi1_setup()= einmal auf und nutzt danach
-=spi1_write8()=/=spi1_write_buf()=/=spi1_write_buf_dma()=.
+Ein einziger, geteilter SPI1-Treiber - wer SPI1 nutzt (Display und
+optional der W25Q128-Flash, siehe unten), ruft =spi1_setup()= einmal
+auf und nutzt danach die Transfer-Funktionen.
 
 #+BEGIN_SRC c
 void spi1_setup(uint32_t baudrate_div);
 void spi1_write8(uint8_t data);
+uint8_t spi1_xfer8(uint8_t data);
 void spi1_write_buf(const uint8_t *buf, uint32_t len);
+void spi1_read_buf(uint8_t *buf, uint32_t len);
 void spi1_write_buf_dma(const uint8_t *buf, uint32_t len);
 #+END_SRC
 
 Die DMA-Variante nutzt DMA2 Stream3 Channel3 (SPI1_TX), blockiert bis
 =DMA_TCIF= gesetzt ist, und wird von =fb8_flush_dma()= für den
 Framebuffer-Transfer genutzt.
+
+=spi1_xfer8()=/=spi1_read_buf()= geben das gleichzeitig auf MISO
+hereinkommende Byte zurück statt es zu verwerfen wie =spi1_write8()=/
+=spi1_write_buf()= - für den Flash-Treiber gebraucht, das Display
+schreibt nur und interessiert sich für den Rückweg nicht.
+
+* W25Q128-Flash (=include/w25q128.h=)
+Treiber für den optionalen W25Q128-SPI-Flash (16MB/128Mbit) auf dem
+BlackPill-Onboard-SOI8-Footprint - siehe [[*Pinbelegung (STM32F411)]]
+für die feste Pinbelegung (CS PA4, SCK/MISO/MOSI geteilt mit dem
+Display auf SPI1).
+
+#+BEGIN_SRC c
+void w25q_init(void);
+void w25q_read_id(uint8_t out[3]);
+void w25q_read(uint32_t addr, uint8_t *buf, uint32_t len);
+void w25q_erase_sector(uint32_t addr);
+void w25q_write_page(uint32_t addr, const uint8_t *buf, uint32_t len);
+#+END_SRC
+
+=w25q_init()= setzt nur die CS-GPIO auf - SPI1 selbst muss schon laufen
+(=ili9488_init()= vorher aufgerufen, z. B. weil =game_run()= das schon
+erledigt hat). =w25q_read_id()= sollte vor allem anderen einmal
+aufgerufen werden, um zu prüfen, ob der Chip überhaupt bestückt/
+angeschlossen ist (echter W25Q128: 0xEF 0x40 0x18).
+
+Wie bei jedem NOR-Flash kann =w25q_write_page()= nur Bits von 1 auf 0
+setzen - vorher geschriebene Adressen müssen erst mit
+=w25q_erase_sector()= gelöscht werden (setzt den ganzen 4KB-Sektor auf
+0xFF zurück), bevor sie neu beschrieben werden können.
+=w25q_write_page()= überschreitet keine 256-Byte-Page-Grenze
+selbstständig - größere/übergreifende Schreibvorgänge muss der Aufrufer
+selbst in Page-Häppchen aufteilen. Es gibt noch keinen Aufrufer im
+Quellbaum (kein Beispiel nutzt bisher Flash-Assets) - reine
+Low-Level-Bausteine zum Draufaufsetzen.
 
 * ADC-Abstraktion (=include/adc.h=)
 Kleiner, generischer ADC1-Wrapper (gepollt, Einzelkonvertierung),
@@ -315,14 +382,17 @@ uint16_t joystick_get_adc_x(void);
 uint16_t joystick_get_adc_y(void);
 #+END_SRC
 
-Fünf digitale Tasten (UP/DOWN/LEFT/RIGHT/BTN, active low mit Pull-Up)
-plus zwei analoge Achsen.
+Sieben digitale Tasten (UP/DOWN/LEFT/RIGHT/BTN/SELECT/START, active low
+mit Pull-Up) plus zwei analoge Achsen. SELECT (PB1) und START (PB5)
+wurden nachträglich ergänzt - die Bitmaske hatte mit UP..BTN erst 5 von
+8 Bits belegt, 0x20/0x40 waren frei. Kein Beispiel wertet sie bisher
+aus.
 
 - invaders nutzt als einziges Beispiel die analoge X-Achse
   (=joystick_get_adc_x()=) für die Bewegung - proportional mit
   Totzone statt der binären Pfeiltasten, siehe
   [[*invaders - Space-Invaders-artiges Shoot-em-up]]. Die übrigen vier
-  Beispiele nutzen ausschließlich die fünf digitalen Tasten.
+  Beispiele nutzen ausschließlich die digitalen Richtungstasten/BTN.
 - In dig-demo, Zauberschloss und Grogs Revenge bewegen die Pfeiltasten
   die Spielfigur um genau ein Tile pro Logik-Tick; BTN löst eine
   kontextabhängige Aktion auf dem Feld aus, dem die Figur zugewandt ist
@@ -689,11 +759,12 @@ Realistische nächste Schritte, sortiert grob nach Aufwand:
   Inventar-Anzeige im HUD, Speicherstand für den Spielfortschritt
   zwischen Sitzungen (siehe Speicherstand-Punkt unten - beide Beispiele
   könnten sich dieselbe Persistenz-Lösung teilen).
-- SD-Karten-Anbindung über =spi.h= (aktuell nicht implementiert, siehe
-  Pinbelegung oben) - z. B. für Level- oder Sprite-Daten von Karte statt
-  aus dem Flash.
-- Speicherstand (Battery-backed RAM / Flash-Sektor) für Fortschritt
-  zwischen Sitzungen.
+- Einen Aufrufer für =include/w25q128.h= (siehe [[*W25Q128-Flash (=include/w25q128.h=)]]) -
+  der Treiber liegt bereit, aber noch kein Beispiel lädt Level- oder
+  Sprite-Daten tatsächlich zur Laufzeit von dort statt sie
+  einzukompilieren.
+- Speicherstand auf dem W25Q128 (ein reservierter Sektor) für
+  Fortschritt zwischen Sitzungen.
 - Zweiter, austauschbarer Font (=font6x8.h= liegt schon bereit) für
   kompakteren HUD-Text.
 - loderunner: Seile (hangelnde Horizontalbewegung) als zweite

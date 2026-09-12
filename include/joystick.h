@@ -1,6 +1,6 @@
 /**
  * @file joystick.h
- * @brief Digital joystick (5 buttons on GPIOB) with debounced edges and
+ * @brief Digital joystick (7 buttons on GPIOB) with debounced edges and
  *        auto-repeat, plus its two analog axes.
  */
 #ifndef JOYSTICK_H
@@ -15,13 +15,20 @@
 #define JS_LEFT_PIN    GPIO14
 #define JS_RIGHT_PIN   GPIO10
 #define JS_BTN_PIN     GPIO12
+/* PB1/PB5 on purpose: plain GPIOs with no boot/debug/USB role, unlike
+ * PB2 (BOOT1) or PB3 (JTDO/TRACESWO) which were also free but come
+ * with caveats - see dokumentation.org's Pinbelegung section. */
+#define JS_SELECT_PIN  GPIO1
+#define JS_START_PIN   GPIO5
 
 /* Bitmasks for JoystickState.raw/pressed/released/repeat */
-#define JS_UP     0x01
-#define JS_DOWN   0x02
-#define JS_LEFT   0x04
-#define JS_RIGHT  0x08
-#define JS_BTN    0x10
+#define JS_UP      0x01
+#define JS_DOWN    0x02
+#define JS_LEFT    0x04
+#define JS_RIGHT   0x08
+#define JS_BTN     0x10
+#define JS_SELECT  0x20
+#define JS_START   0x40
 
 /* Analog pins (ADC) */
 #define JS_ADC_X_PORT  GPIOA

@@ -21,7 +21,8 @@ void joystick_init(void)
 
     gpio_mode_setup(JS_PORT, GPIO_MODE_INPUT, GPIO_PUPD_PULLUP,
                      JS_UP_PIN | JS_DOWN_PIN | JS_LEFT_PIN |
-                     JS_RIGHT_PIN | JS_BTN_PIN);
+                     JS_RIGHT_PIN | JS_BTN_PIN | JS_SELECT_PIN |
+                     JS_START_PIN);
 
     hal_adc_pin_setup(JS_ADC_X_PORT, JS_ADC_X_PIN);
     hal_adc_pin_setup(JS_ADC_Y_PORT, JS_ADC_Y_PIN);
@@ -34,11 +35,13 @@ JoystickState joystick_update(void)
     JoystickState js = {0};
     uint8_t raw = 0;
 
-    if (!gpio_get(JS_PORT, JS_UP_PIN))    raw |= JS_UP;
-    if (!gpio_get(JS_PORT, JS_DOWN_PIN))  raw |= JS_DOWN;
-    if (!gpio_get(JS_PORT, JS_LEFT_PIN))  raw |= JS_LEFT;
-    if (!gpio_get(JS_PORT, JS_RIGHT_PIN)) raw |= JS_RIGHT;
-    if (!gpio_get(JS_PORT, JS_BTN_PIN))   raw |= JS_BTN;
+    if (!gpio_get(JS_PORT, JS_UP_PIN))     raw |= JS_UP;
+    if (!gpio_get(JS_PORT, JS_DOWN_PIN))   raw |= JS_DOWN;
+    if (!gpio_get(JS_PORT, JS_LEFT_PIN))   raw |= JS_LEFT;
+    if (!gpio_get(JS_PORT, JS_RIGHT_PIN))  raw |= JS_RIGHT;
+    if (!gpio_get(JS_PORT, JS_BTN_PIN))    raw |= JS_BTN;
+    if (!gpio_get(JS_PORT, JS_SELECT_PIN)) raw |= JS_SELECT;
+    if (!gpio_get(JS_PORT, JS_START_PIN))  raw |= JS_START;
 
     js.raw = raw;
     js.pressed  = (raw & ~last_raw);
