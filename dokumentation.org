@@ -76,6 +76,7 @@ Kopie - =git submodule update --init= nach dem Klonen nicht vergessen.
 | SPI1 MOSI         | PA7  | AF5      | SPI1            | Daten, geteilt Display/Flash |
 | SPI1 MISO         | PA6  | AF5      | SPI1            | Daten (nur vom Flash genutzt, Display schreibt nur) |
 | W25Q128 CS        | PA4  | Output   | GPIO            | Chip Select Flash - BlackPill-Onboard-SOI8-Footprint |
+| Touch CS          | PB6  | Output   | GPIO            | Chip Select Touch-Controller (TP_CS), Modul-Pin 26 |
 | Audio PWM Out     | PB4  | AF2      | TIM3_CH1        | PWM-Audio (bewusst *nicht* PA6 - lag dort direkt zwischen SPI1 SCK/MOSI und hat den Display-Link per Übersprechen gestört, siehe =include/sfx.h=) |
 | Joystick UP       | PB13 | Input    | GPIO            | Pull-Up                 |
 | Joystick DOWN     | PB15 | Input    | GPIO            | Pull-Up                 |
@@ -89,15 +90,16 @@ Kopie - =git submodule update --init= nach dem Klonen nicht vergessen.
 
 Alle Konstanten liegen in den jeweiligen Modul-Headern
 (=include/ili9488.h=, =include/spi.h=, =include/w25q128.h=,
-=include/sfx.h=, =include/joystick.h=) - dort nachschlagen, nicht hier,
-falls sich mal etwas ändert.
+=include/touch.h=, =include/sfx.h=, =include/joystick.h=) - dort
+nachschlagen, nicht hier, falls sich mal etwas ändert.
 
 ** Hinweise
-- SPI1 (SCK/MISO/MOSI = PA5/PA6/PA7) wird von *zwei* Geräten mit
-  getrennter CS-Leitung geteilt: Display (CS PB0) und der optionale
+- SPI1 (SCK/MISO/MOSI = PA5/PA6/PA7) wird von *drei* Geräten mit
+  getrennter CS-Leitung geteilt: Display (CS PB0), der optionale
   W25Q128-Flash auf dem BlackPill-Onboard-Footprint (CS PA4, fest von
   der Platine vorgegeben - deshalb liegt die Display-CS bewusst *nicht*
-  mehr auf PA4). Es gibt keine Bus-Arbitrierung über eine einzelne
+  mehr auf PA4) und der Touch-Controller des LCD-Moduls (CS PB6, siehe
+  =include/touch.h=). Es gibt keine Bus-Arbitrierung über eine einzelne
   Transaktion hinaus - passt, solange (wie aktuell) alles aus einer
   einzigen Bare-Metal-Hauptschleife läuft und nichts SPI1 nebenläufig
   anfasst.
@@ -127,6 +129,10 @@ Pin	Funktion	Beschreibung
 24	LCD_CS	LCD chip selection, low active
 26	TP_CS	Touch Panel chip selection, low active
 
+MCU-seitige Zuordnung dieser Pins: LCD_SCK/TP_SCK -> PA5, LCD_SI/TP_SI
+-> PA7, TP_SO -> PA6 (LCD_SI hat keine eigene SO-Leitung, das Display
+wird nur beschrieben), LCD_CS -> PB0, TP_CS -> PB6 (=include/touch.h=),
+LCD_RS -> PA3, RST -> PA2. TP_IRQ (Pin 11) ist noch nicht angeschlossen.
 
 ILI9486
 
