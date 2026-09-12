@@ -5,7 +5,7 @@
 # the shared engine sources together with that example's own files. This
 # Makefile just delegates to the examples.
 # -----------------------------------------------------------------------------
-EXAMPLES = examples/dig-demo examples/zauberschloss examples/grogs-revenge examples/scroller-demo examples/invaders examples/nebelkrone
+EXAMPLES = examples/dig-demo examples/zauberschloss examples/grogs-revenge examples/scroller-demo examples/invaders examples/nebelkrone examples/gamebook-template
 
 .PHONY: all clean flash docs docs-clean
 
