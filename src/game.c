@@ -4,7 +4,7 @@
  */
 #include "game.h"
 #include "clock.h"
-#include "st7789.h"
+#include "ili9488.h"
 #include "framebuffer8.h"
 
 /** @brief See game_run() in the header for the full contract. */
@@ -13,7 +13,7 @@ void game_run(const GameAPI *game, uint32_t tick_ms)
     clock_setup();
     systick_setup();
 
-    st7789_init();
+    ili9488_init();
     fb8_init_palette();
 
     joystick_init();
@@ -27,8 +27,18 @@ void game_run(const GameAPI *game, uint32_t tick_ms)
         JoystickState js = joystick_update();
         uint32_t now = millis();
 
-        if (now - last_tick >= tick_ms) {
-            last_tick = now;
+        /* Fixed-timestep catch-up: each game->update() call represents
+         * exactly tick_ms of elapsed time (games rely on that, e.g.
+         * countdown timers subtracting tick_ms directly). A single
+         * "if" here would silently cap the logic rate at the render
+         * frame rate whenever a flush takes longer than tick_ms -
+         * catching up with a bounded loop instead keeps game speed
+         * tied to wall-clock time regardless of how long drawing
+         * takes. The iteration cap is just spiral-of-death protection
+         * (e.g. after a debugger pause), not a normal code path. */
+        int catchup = 0;
+        while (now - last_tick >= tick_ms && catchup++ < 5) {
+            last_tick += tick_ms;
             if (game->update)
                 game->update(&js, tick_ms);
         }
