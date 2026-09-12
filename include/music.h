@@ -26,10 +26,27 @@ typedef struct {
 void music_init(const MusicNote *track);
 
 /**
+ * @brief Starts an optional second "bass" voice alongside music_init()'s
+ *        melody, playing its own note sequence on the engine's third SID
+ *        voice (see sfx_play_bass_freq()). Call once after music_init();
+ *        games that skip this play melody-only, as before. The melody
+ *        and bass channels loop independently on their own note
+ *        sequences, so for a bass line that stays in phase with the
+ *        melody across loops, its total duration (the sum of all
+ *        durations before the terminator) should match the melody
+ *        track's total duration.
+ * @param track Bass note sequence; same format as music_init()'s track,
+ *              NULL/0-duration terminated. Not copied, must outlive
+ *              playback.
+ */
+void music_init_bass(const MusicNote *track);
+
+/**
  * @brief Advances playback by one millisecond. Call once per ms (in this
  *        project, from sfx.c's internal 1 ms tick).
  */
 void music_update_1ms(void);
 
-/** @brief Stops playback and silences the music voice. */
+/** @brief Stops playback (melody and bass, if started) and silences
+ *         both voices. */
 void music_stop(void);

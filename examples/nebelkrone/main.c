@@ -16,8 +16,9 @@
  * NODE_END_WIN/NODE_END_LOSE end the run. Illustrations are the same
  * tile-grid technique the other examples use for room maps (art.h/
  * art.c/tileset16.c), just composed as static backdrops. A short
- * original background tune loops throughout (track.h), and sfx.h marks
- * hits, pickups, danger and death.
+ * original background tune loops throughout, melody plus a root-note
+ * bass line on the engine's second music voice (track.h, see
+ * music_init_bass()), and sfx.h marks hits, pickups, danger and death.
  *
  * Controls: UP/DOWN move the menu cursor, BTN confirms.
  *
@@ -306,6 +307,7 @@ static void nebel_init(void)
     sfx_init();
     rng_state ^= ((uint32_t)joystick_get_adc_x() << 16) ^ joystick_get_adc_y();
     music_init(nebel_track);
+    music_init_bass(nebel_bass);
     story_start();
     state = STATE_TITEL;
 }

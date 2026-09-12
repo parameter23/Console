@@ -56,7 +56,19 @@ void sfx_stop(void);
 
 /**
  * @brief Directly drives voice 0 (the "music" voice) at a fixed frequency;
- *        used by music.c to play MusicNote sequences. freq == 0 silences it.
- * @param freq Frequency in Hz, or 0 to silence.
+ *        used by music.c to play MusicNote sequences. freq == 0 releases
+ *        it into a short fade-out instead of cutting it off immediately
+ *        (avoids an audible click at rests/note boundaries).
+ * @param freq Frequency in Hz, or 0 to release into silence.
  */
 void sfx_play_freq(uint16_t freq);
+
+/**
+ * @brief Directly drives voice 2 (the optional "bass" voice) at a fixed
+ *        frequency; used by music.c's optional second music channel
+ *        (see music_init_bass()). Same fade-out-on-zero behavior as
+ *        sfx_play_freq(). Idle/silent until first used, so games that
+ *        don't call music_init_bass() are unaffected.
+ * @param freq Frequency in Hz, or 0 to release into silence.
+ */
+void sfx_play_bass_freq(uint16_t freq);

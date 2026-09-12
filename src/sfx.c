@@ -17,7 +17,14 @@ typedef enum {
 
 typedef struct {
     uint32_t freq;
-    uint8_t  volume;
+    uint8_t  volume;     /* target/peak level the envelope ramps toward */
+    uint8_t  env;        /* current envelope level actually heard - see
+                           * envelope_tick(); this, not volume, drives
+                           * the mixer, so notes/effects fade in and out
+                           * instead of clicking on/off. */
+    uint8_t  releasing;  /* 1 = ramping env down to 0, then auto-mutes */
+    uint16_t pw;          /* SID_WAVE_SQUARE duty threshold, 0..0xFFFF;
+                           * 0x8000 = 50%. Unused by other waveforms. */
     SidWave  wave;
     uint32_t phase;
     uint8_t  active;
@@ -27,6 +34,13 @@ typedef struct {
 #define SID_SAMPLE_RATE  20000
 #define SID_PHASE_BITS   24
 #define SID_PHASE_MAX    (1u << SID_PHASE_BITS)
+#define SID_PW_DEFAULT   0x8000
+
+/* Envelope ramp rates, applied once per 1 ms tick (see envelope_tick()).
+ * Attack is fast (a handful of ms to peak) just to avoid a hard click;
+ * release is slower so effects/notes trail off instead of cutting out. */
+#define SID_ENV_ATTACK_STEP   32
+#define SID_ENV_RELEASE_STEP  6
 
 /*
  * step = freq * SID_PHASE_MAX / SID_SAMPLE_RATE, precomputed as a Q16
@@ -100,11 +114,14 @@ void sfx_init(void)
 
     /* Stimmen zurücksetzen */
     for (int i = 0; i < SID_VOICES; i++) {
-        sid_voice[i].active = 0;
-        sid_voice[i].phase  = 0;
-        sid_voice[i].freq   = 0;
-        sid_voice[i].volume = 0;
-        sid_voice[i].wave   = SID_WAVE_SQUARE;
+        sid_voice[i].active    = 0;
+        sid_voice[i].phase     = 0;
+        sid_voice[i].freq      = 0;
+        sid_voice[i].volume    = 0;
+        sid_voice[i].env       = 0;
+        sid_voice[i].releasing = 0;
+        sid_voice[i].pw        = SID_PW_DEFAULT;
+        sid_voice[i].wave      = SID_WAVE_SQUARE;
     }
 
     sfx_current      = SFX_NONE;
@@ -112,6 +129,34 @@ void sfx_init(void)
     sfx_param        = 0;
     sfx_divider      = 0;
 
+}
+
+/**
+ * @brief Advances one voice's envelope by one step (called once per 1 ms
+ *        tick for every voice). Ramps env up toward volume while active
+ *        and not releasing (attack), or down to 0 while releasing
+ *        (release) - whichever avoids the hard on/off click a direct
+ *        volume cut would cause. Auto-deactivates the voice once a
+ *        release reaches 0.
+ */
+static void envelope_tick(SidVoice *v)
+{
+    if (!v->active) {
+        v->env = 0;
+        return;
+    }
+
+    if (v->releasing) {
+        if (v->env > SID_ENV_RELEASE_STEP) {
+            v->env -= SID_ENV_RELEASE_STEP;
+        } else {
+            v->env = 0;
+            v->active = 0;
+        }
+    } else if (v->env < v->volume) {
+        uint16_t next = (uint16_t)v->env + SID_ENV_ATTACK_STEP;
+        v->env = (next > v->volume) ? v->volume : (uint8_t)next;
+    }
 }
 
 /* ---------------------------------------------------------
@@ -127,9 +172,7 @@ static void sfx_update_tick(void)
         if (sfx_time_left_ms > 0) {
             sfx_time_left_ms--;
             if (sfx_time_left_ms == 0) {
-                sid_voice[1].active = 0;
-                sid_voice[1].freq   = 0;
-                sid_voice[1].volume = 0;
+                sid_voice[1].releasing = 1;
                 sfx_current = SFX_NONE;
             }
         }
@@ -138,9 +181,11 @@ static void sfx_update_tick(void)
 
         switch (sfx_current) {
         case SFX_PICKUP:
-            sfx_param += 40;
-            if (sfx_param > 2000) sfx_param = 2000;
-            v->freq = sfx_param;
+            /* Two-step "ding-ding" arpeggio (C5 -> G5) instead of one
+             * continuous sweep - reads more like a satisfying pickup
+             * chime than a siren. */
+            sfx_param++;
+            v->freq = (sfx_param < 35) ? 523 : 784;
             break;
 
         case SFX_MOVE:
@@ -152,6 +197,10 @@ static void sfx_update_tick(void)
             sfx_param += 20;
             if (sfx_param > 3000) sfx_param = 3000;
             v->freq = sfx_param;
+            /* Pulse width widens as the pitch climbs - the square wave
+             * goes from thin/buzzy to fuller, a cheap "powering up"
+             * texture change alongside the pitch sweep. */
+            v->pw = (uint16_t)(0x3000 + (sfx_param * 0x5000) / 3000);
             break;
 
         case SFX_EXPLOSION:
@@ -169,8 +218,11 @@ static void sfx_update_tick(void)
         }
     }
 
+    for (int i = 0; i < SID_VOICES; i++)
+        envelope_tick(&sid_voice[i]);
+
     /* Musik-Timing */
-     music_update_1ms();
+    music_update_1ms();
 }
 
 /** @brief See sfx_update_1ms() in the header for the full contract. */
@@ -199,8 +251,7 @@ static void sid_update(void)
 
     for (int i = 0; i < SID_VOICES; i++) {
         SidVoice *v = &sid_voice[i];
-        if (!v->active || v->volume == 0 || v->freq == 0) {
-            v->active = 0;
+        if (!v->active || v->env == 0 || v->freq == 0) {
             continue;
         }
 
@@ -215,9 +266,13 @@ static void sid_update(void)
         uint8_t sample = 0;
 
         switch (v->wave) {
-        case SID_WAVE_SQUARE:
-            sample = (v->phase & (1u << 23)) ? 255 : 0;
+        case SID_WAVE_SQUARE: {
+            /* Variable duty cycle (v->pw) instead of a fixed 50% split -
+             * lets effects/voices sweep their timbre, not just pitch. */
+            uint16_t ph16 = (uint16_t)(v->phase >> 8);
+            sample = (ph16 < v->pw) ? 0 : 255;
             break;
+        }
         case SID_WAVE_TRIANGLE:
             sample = (v->phase >> 16) ^ ((v->phase >> 23) ? 0xFF : 0x00);
             break;
@@ -227,7 +282,8 @@ static void sid_update(void)
             break;
         }
 
-        mix += (int32_t)(sample - 128) * v->volume;
+        /* v->env (not v->volume) drives the mix - see envelope_tick(). */
+        mix += (int32_t)(sample - 128) * v->env;
     }
 
     if (!any_active) {
@@ -265,22 +321,37 @@ void tim2_isr(void)
 }
 
 /* ---------------------------------------------------------
- * Musik (Voice 0)
+ * Musik (Voice 0 = Melodie, Voice 2 = optionaler Bass)
  * --------------------------------------------------------- */
 /** @brief See sfx_play_freq() in the header for the full contract. */
 void sfx_play_freq(uint16_t freq)
 {
     if (freq == 0) {
-        sid_voice[0].active = 0;
-        sid_voice[0].freq   = 0;
-        sid_voice[0].volume = 0;
+        sid_voice[0].releasing = 1;
         return;
     }
 
-    sid_voice[0].freq   = freq;
-    sid_voice[0].volume = 80;
-    sid_voice[0].wave   = SID_WAVE_TRIANGLE;
-    sid_voice[0].active = 1;
+    sid_voice[0].freq      = freq;
+    sid_voice[0].volume    = 80;
+    sid_voice[0].wave      = SID_WAVE_TRIANGLE;
+    sid_voice[0].active    = 1;
+    sid_voice[0].releasing = 0;
+}
+
+/** @brief See sfx_play_bass_freq() in the header for the full contract. */
+void sfx_play_bass_freq(uint16_t freq)
+{
+    if (freq == 0) {
+        sid_voice[2].releasing = 1;
+        return;
+    }
+
+    sid_voice[2].freq      = freq;
+    sid_voice[2].volume    = 65; /* a bit under the melody so it sits underneath */
+    sid_voice[2].wave      = SID_WAVE_SQUARE;
+    sid_voice[2].pw        = 0x9800; /* narrower duty - punchier low end */
+    sid_voice[2].active    = 1;
+    sid_voice[2].releasing = 0;
 }
 
 /* ---------------------------------------------------------
@@ -294,14 +365,24 @@ void sfx_play(SfxType type)
     sfx_param        = 0;
 
     SidVoice *v = &sid_voice[1];
+    v->releasing = 0;
+    v->pw        = SID_PW_DEFAULT;
 
     switch (type) {
+    case SFX_BEEP:
+        v->wave   = SID_WAVE_SQUARE;
+        v->volume = 100;
+        v->freq   = 660;
+        v->active = 1;
+        sfx_time_left_ms = 90;
+        break;
+
     case SFX_PICKUP:
         v->wave   = SID_WAVE_SQUARE;
         v->volume = 120;
-        v->freq   = 400;
+        v->freq   = 523; /* C5, sfx_update_tick() arpeggios up to G5 */
         v->active = 1;
-        sfx_param = 400;
+        sfx_param = 0;
         sfx_time_left_ms = 70;
         break;
 
@@ -353,9 +434,11 @@ void sfx_play(SfxType type)
 void sfx_stop(void)
 {
     for (int i = 0; i < SID_VOICES; i++) {
-        sid_voice[i].active = 0;
-        sid_voice[i].freq   = 0;
-        sid_voice[i].volume = 0;
+        sid_voice[i].active    = 0;
+        sid_voice[i].freq      = 0;
+        sid_voice[i].volume    = 0;
+        sid_voice[i].env       = 0;
+        sid_voice[i].releasing = 0;
     }
     sfx_current      = SFX_NONE;
     sfx_time_left_ms = 0;
