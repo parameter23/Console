@@ -11,11 +11,22 @@
 #include <libopencm3/stm32/gpio.h>
 #include <libopencm3/stm32/timer.h>
 
-/* Hardware mapping */
+/* Hardware mapping.
+ *
+ * PB4 (not PA6) on purpose: TIM3_CH1 is available on both pins (AF2),
+ * but PA6 sits right between SPI1's SCK (PA5) and MOSI (PA7) - fast
+ * PWM edges there coupled onto the display SPI link and corrupted the
+ * framebuffer on real hardware. PB4 is a different GPIO port, away
+ * from the SPI bus, with no such crosstalk path.
+ *
+ * Note: PB4 is NJTRST out of reset. Harmless as long as programming
+ * stays on 2-wire SWD (this project's openocd flash target already
+ * uses cmsis-dap/SWD, not full JTAG) - sfx_init() reconfigures the pin
+ * to AF2 before it's ever used as PWM. */
 #define SFX_TIMER       TIM3
 #define SFX_TIMER_RCC   RCC_TIM3
-#define SFX_GPIO_PORT   GPIOA
-#define SFX_GPIO_PIN    GPIO6
+#define SFX_GPIO_PORT   GPIOB
+#define SFX_GPIO_PIN    GPIO4
 #define SFX_GPIO_AF     GPIO_AF2
 
 /**

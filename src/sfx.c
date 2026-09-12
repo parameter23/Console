@@ -71,14 +71,12 @@ static uint16_t sfx_divider = 0;
 /** @brief See sfx_init() in the header for the full contract. */
 void sfx_init(void)
 {
-    /* GPIOA PA6 = TIM3_CH1 (AF2). Slowest slew rate on purpose: this pin
-     * sits right between SPI1's SCK (PA5) and MOSI (PA7), and fast
-     * edges on a 40kHz PWM signal have no audible benefit but do throw
-     * a lot of high-frequency harmonic content at its neighbours -
-     * confirmed on real hardware to corrupt the SPI display link
-     * (garbled CASET/PASET/RAMWR bytes). 2MHz slew is still far faster
-     * than this PWM needs and cuts that coupling right at the source. */
-    rcc_periph_clock_enable(RCC_GPIOA);
+    /* GPIOB PB4 = TIM3_CH1 (AF2) - see SFX_GPIO_PORT in sfx.h for why
+     * this isn't PA6. Slew rate is still kept low deliberately: this
+     * 40kHz PWM has no audible need for fast edges, and slow edges mean
+     * less high-frequency harmonic content radiated/coupled to
+     * neighbouring signals in general. */
+    rcc_periph_clock_enable(RCC_GPIOB);
     gpio_mode_setup(SFX_GPIO_PORT, GPIO_MODE_AF, GPIO_PUPD_NONE, SFX_GPIO_PIN);
     gpio_set_af(SFX_GPIO_PORT, SFX_GPIO_AF, SFX_GPIO_PIN);
     gpio_set_output_options(SFX_GPIO_PORT, GPIO_OTYPE_PP, GPIO_OSPEED_2MHZ, SFX_GPIO_PIN);

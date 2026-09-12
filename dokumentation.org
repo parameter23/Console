@@ -69,13 +69,13 @@ Kopie - =git submodule update --init= nach dem Klonen nicht vergessen.
 ** Übersicht
 | Funktion          | Pin  | Richtung | Peripherie      | Beschreibung             |
 |-------------------+------+----------+-----------------+--------------------------|
-| ST7789 CS         | PA4  | Output   | GPIO            | Chip Select LCD          |
-| ST7789 DC         | PA3  | Output   | GPIO            | Data/Command             |
-| ST7789 RESET      | PA2  | Output   | GPIO            | Display Reset            |
+| ILI9488 CS        | PA4  | Output   | GPIO            | Chip Select LCD          |
+| ILI9488 DC        | PA3  | Output   | GPIO            | Data/Command             |
+| ILI9488 RESET     | PA2  | Output   | GPIO            | Display Reset            |
 | SPI1 SCK          | PA5  | AF5      | SPI1            | Display-Takt             |
 | SPI1 MOSI         | PA7  | AF5      | SPI1            | Display-Daten            |
-| SPI1 MISO         | PA6  | -        | SPI1 (unbenutzt) | frei, siehe Audio unten  |
-| Audio PWM Out     | PA6  | AF2      | TIM3_CH1        | PWM-Audio (teilt sich PA6 mit SPI1 MISO, das nicht angeschlossen ist) |
+| SPI1 MISO         | PA6  | -        | SPI1 (unbenutzt) | frei                     |
+| Audio PWM Out     | PB4  | AF2      | TIM3_CH1        | PWM-Audio (bewusst *nicht* PA6 - lag dort direkt zwischen SPI1 SCK/MOSI und hat den Display-Link per Übersprechen gestört, siehe =include/sfx.h=) |
 | Joystick UP       | PB13 | Input    | GPIO            | Pull-Up                 |
 | Joystick DOWN     | PB15 | Input    | GPIO            | Pull-Up                 |
 | Joystick LEFT     | PB14 | Input    | GPIO            | Pull-Up                 |
@@ -85,7 +85,7 @@ Kopie - =git submodule update --init= nach dem Klonen nicht vergessen.
 | Joystick ADC Y    | PA1  | Analog   | ADC1_IN1        | Y-Achse                 |
 
 Alle Konstanten liegen in den jeweiligen Modul-Headern
-(=include/st7789.h=, =include/spi.h=, =include/sfx.h=,
+(=include/ili9488.h=, =include/spi.h=, =include/sfx.h=,
 =include/joystick.h=) - dort nachschlagen, nicht hier, falls sich mal
 etwas ändert.
 
@@ -149,11 +149,15 @@ void game_run(const GameAPI *game, uint32_t tick_ms);
 1. initialisiert Takt, SysTick, Display, Framebuffer-Palette und Joystick,
 2. ruft einmalig =game->init()= auf,
 3. läuft danach endlos: fragt den Joystick ab, ruft =game->update()= alle
-   =tick_ms= Millisekunden auf, ruft =game->draw()= *jede* Schleifen-
-   iteration auf (der Framebuffer ist zu diesem Zeitpunkt bereits mit
-   Farbe 0 gelöscht) und schiebt das Bild per =fb8_flush_dma()= raus.
+   =tick_ms= Millisekunden auf (mit Nachhol-Ticks, falls ein Frame mal
+   länger als =tick_ms= gedauert hat - die Spielgeschwindigkeit bleibt
+   damit ans Wall-Clock gebunden statt an die Bildrate, mit einer festen
+   Obergrenze von 5 Nachhol-Ticks pro Frame als Absicherung), ruft
+   =game->draw()= *jede* Schleifeniteration auf (der Framebuffer ist zu
+   diesem Zeitpunkt bereits mit Farbe 0 gelöscht) und schiebt das Bild
+   per =fb8_flush_dma()= raus.
 
-Ein Spiel ruft =clock_setup()=/=st7789_init()=/etc. also *nie* selbst
+Ein Spiel ruft =clock_setup()=/=ili9488_init()=/etc. also *nie* selbst
 auf - das übernimmt =game_run()=.
 
 ** Wahl von tick_ms
@@ -167,12 +171,21 @@ flüssiges Scrollen statt als Raster-Sprünge wirkt (siehe
 [[*scroller-demo - echtes Side-Scrolling (Proof of Concept)]]).
 
 * Framebuffer (=include/framebuffer8.h=)
-8-Bit-indizierter Framebuffer, 320×240 Pixel, 1 Byte pro Pixel
-(Palettenindex in =fb8_palette[256]=, RGB565).
+4-Bit-indizierter Framebuffer, 480×320 Pixel, 2 Pixel pro Byte
+(Palettenindex 0-15 in =fb8_palette[16]=, RGB565).
+
+Ursprünglich 320×240 bei 1 Byte/Pixel (256 Farben, wie es der Name
+=framebuffer8= noch nahelegt - historisch gewachsen, nicht mehr
+korrigiert). Beim Umstieg auf das größere 480×320-Panel hätte 1
+Byte/Pixel 153.600 statt 76.800 Byte gebraucht und damit nicht mehr in
+die 128 KB RAM des STM32F411CE gepasst. Da Sprites/Tiles ohnehin nie
+mehr als die 16 Basisfarben genutzt haben, packt der Framebuffer jetzt
+2 Pixel/Byte (4 Bit/Pixel) - exakt wieder 76.800 Byte, nur über die
+größere Fläche verteilt.
 
 #+BEGIN_SRC c
-#define FB8_WIDTH   320
-#define FB8_HEIGHT  240
+#define FB8_WIDTH   480
+#define FB8_HEIGHT  320
 
 void fb8_clear(uint8_t color);
 void fb8_set_pixel(int x, int y, uint8_t color);
@@ -183,7 +196,7 @@ void fb8_flush(void);       // gepollt, Referenzimplementierung
 void fb8_flush_dma(void);   // DMA-basiert, deutlich schneller - der Normalfall
 #+END_SRC
 
-=fb8_init_palette()= belegt die ersten 16 Paletteneinträge mit einer
+=fb8_init_palette()= belegt alle 16 Paletteneinträge mit einer
 C64-artigen Farbpalette (Schwarz, Weiß, Rot, Cyan, Lila, Grün, Blau,
 Gelb, Orange, Braun, Hellrot, Dunkelgrau, Grau, Hellgrün, Hellblau,
 Hellgrau) - alle Beispiele nutzen diese Indizes konsistent.
@@ -227,20 +240,38 @@ deutschen Text deshalb transliteriert (UE/OE/AE/SS), wie viele
 Ein zweiter, ungenutzter 6×8-Font liegt unter =include/font6x8.h= bereit
 (z. B. für kompakteren HUD-Text in einem künftigen Spiel).
 
-* Display-Treiber ST7789 (=include/st7789.h=)
+* Display-Treiber ILI9488/ILI9486 (=include/ili9488.h=)
+Löste den ursprünglichen ST7789-Treiber ab, als das Panel auf 480×320
+vergrößert wurde. Gleiche Steuerpins, gleicher MIPI-DBI-kompatibler
+Befehlssatz (0x2A/0x2B/0x2C für die Fensteradressierung).
+
 #+BEGIN_SRC c
-void st7789_init(void);
-void st7789_set_window(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1);
-void st7789_draw_pixel(uint16_t x, uint16_t y, uint16_t color);
-void st7789_fill_rect(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t color);
-void st7789_cmd(uint8_t cmd);
-void st7789_data(uint8_t data);
+void ili9488_init(void);
+void ili9488_set_window(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1);
+void ili9488_draw_pixel(uint16_t x, uint16_t y, uint16_t color);
+void ili9488_fill_rect(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t color);
+void ili9488_cmd(uint8_t cmd);
+void ili9488_data(uint8_t data);
 #+END_SRC
 
-=st7789_init()= ruft =spi1_setup()= auf (siehe unten), macht die
-Reset-Sequenz über den RST-Pin und initialisiert das Panel: MADCTL
-(Querformat), COLMOD (16bpp RGB565), Timing-Register, Display-Inversion
-an, Sleep Out, Display On.
+=ili9488_init()= ruft =spi1_setup()= auf (siehe unten), macht die
+Reset-Sequenz über den RST-Pin und initialisiert das Panel: Gamma-,
+Power- und VCOM-Register, MADCTL (Querformat), COLMOD (16bpp RGB565),
+Sleep Out, Display On.
+
+*Wichtig:* Auf dem einen konkret verbauten Panel hat sich das COLMOD
+auf 16bpp/RGB565 als nötig herausgestellt statt der 18bpp/RGB666
+(3 Byte/Pixel), die "echte" ILI9488-Module über SPI oft brauchen -
+Symptom bei RGB666 war ein durchlaufender/springender Bildinhalt
+(alter oberer Bildbereich blutete in den unteren durch), weil der
+Controller die Pixeldaten offenbar als 16bpp interpretiert und sein
+Adresszähler dadurch vor Ende des Frames umlief. Sehr wahrscheinlich
+steckt in dem als "ILI9488" verkauften Modul tatsächlich ein ILI9486 -
+ein bei günstigen 3.5"-SPI-TFT-Modulen häufiges Mislabeling. Da PA6
+(SPI1 MISO) nicht angeschlossen ist, lässt sich die Controller-ID nicht
+per Software auslesen; falls ein anderes Panel verbaut wird, ist das
+COLMOD/Pixelformat (=ili9488_init()=, =fb8_flush()=/=fb8_flush_dma()=
+in =src/framebuffer8.c=) der erste Ansatzpunkt bei Bildfehlern.
 
 * SPI-Abstraktion (=include/spi.h=)
 Ein einziger, geteilter SPI1-Treiber - alles, was SPI1 nutzt (aktuell
