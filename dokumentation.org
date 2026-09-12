@@ -29,6 +29,8 @@ examples/
   scroller-demo/          Proof-of-Concept für echtes pixelweises Side-Scrolling
   invaders/               Space-Invaders-artiges Shoot-em-up mit animierten Sprites
   nebelkrone/             Illustriertes Interactive-Fiction-Gamebook im Stil von DSA
+  gamebook-template/      Story-neutrale Vorlage, aus nebelkrone extrahiert
+  loderunner/             Lode-Runner-artiges Grab-und-Fluchtspiel
 Makefile                 Delegiert an examples/*/Makefile
 Doxyfile                 Doxygen-Konfiguration (INPUT: src include examples)
 #+END_SRC
@@ -316,7 +318,8 @@ void sfx_init(void);
 void sfx_update_1ms(void);   // interner 1ms-Tick, wird aus dem TIM2-ISR abgeleitet
 void sfx_play(SfxType type); // Stimme 1: kanonische Effekte
 void sfx_stop(void);
-void sfx_play_freq(uint16_t freq);  // Stimme 0: rohe Frequenz, für music.h
+void sfx_play_freq(uint16_t freq);       // Stimme 0: rohe Frequenz, für music.h
+void sfx_play_bass_freq(uint16_t freq);  // Stimme 2: optionaler Bass, für music.h
 #+END_SRC
 
 Jede Stimme hat eine Wellenform (Rechteck/Dreieck/Rauschen via LFSR),
@@ -327,9 +330,36 @@ Schrittweite wird als Q16-Fixpunkt-Multiplikator vorab berechnet
 ist (der Cortex-M4 hat dafür keine Hardware, und =-nostdlib= verlinkt
 kein =libgcc= für den Softwarepfad).
 
+Drei Verbesserungen gegenüber einem reinen "Ton an/Ton aus":
+
+- *Hüllkurve*: jede Stimme hat neben =volume= (Zielpegel) ein =env=
+  (aktueller, tatsächlich gehörter Pegel), das =envelope_tick()= pro
+  1-ms-Tick Richtung =volume= (Attack, ca. 4 ms) bzw. Richtung 0
+  (Release, ca. 20 ms) rampt, statt hart zu schalten - der Mixer
+  benutzt =env=, nicht =volume=. Das nimmt jedem Effekt- und Notenende
+  das hörbare Klicken; =sfx_play_freq(0)=/=sfx_play_bass_freq(0)= lösen
+  jetzt ein Ausklingen aus statt eines sofortigen Stopps.
+- *Pulsweiten-Modulation*: Rechteckstimmen haben ein =pw= (Tastgrad,
+  0..0xFFFF statt fest 50%). =SFX_LASER= läuft den Tastgrad während des
+  Frequenz-Sweeps mit hoch - klingt beim Einsatz dünner/schnarrender,
+  wird zum Ende voller, ein billiger, aber wirkungsvoller SID-Trick.
+- *Dritte Stimme aktiviert*: Stimme 2 war deklariert, aber ungenutzt.
+  Jetzt treibt sie wahlweise einen zweiten Musikkanal (siehe
+  =music_init_bass()= unten) - ansonsten bleibt sie stumm, bestehender
+  Code ohne Bass-Aufruf verhält sich unverändert.
+
+=SFX_PICKUP= ist außerdem kein reiner Sweep mehr, sondern ein kurzes
+Zwei-Ton-Arpeggio (C5→G5) - liest sich eher als "Ding-Ding" denn als
+Sirene. Und =SFX_BEEP= hatte schlicht keinen =case= in =sfx_play()=s
+Switch und fiel auf =default: sfx_stop()= - jeder Aufruf verstummte
+also *alle* Stimmen, statt zu piepsen (betraf scroller-demos Sprung-Sound
+und zwei Stellen in Zauberschloss). Jetzt spielt er einen sauberen,
+kurzen Ton.
+
 ** music.h - Noten-Sequencer
 Generischer Player für eine =MusicNote[]=-Sequenz über =sfx_play_freq()=
-(Stimme 0):
+(Stimme 0), optional mit zweitem Kanal über =sfx_play_bass_freq()=
+(Stimme 2):
 
 #+BEGIN_SRC c
 typedef struct {
@@ -337,16 +367,28 @@ typedef struct {
     uint16_t duration;  // ms; duration == 0 markiert Track-Ende (springt zurück auf 0)
 } MusicNote;
 
-void music_init(const MusicNote *track);
+void music_init(const MusicNote *track);       // Melodie, Stimme 0
+void music_init_bass(const MusicNote *track);  // optional: Bass, Stimme 2
 void music_update_1ms(void);
 void music_stop(void);
 #+END_SRC
+
+Melodie und Bass laufen als zwei unabhängige Sequenzer-Instanzen in
+=music_update_1ms()= und loopen jeweils eigenständig auf ihrer eigenen
+Notenfolge - für einen Bass, der über Loop-Grenzen hinweg synchron zur
+Melodie bleibt, muss seine Gesamtdauer (Summe aller =duration=-Werte vor
+dem Terminator) zur Melodie-Gesamtdauer passen. =music_init_bass()= ist
+rein additiv: ruft ein Spiel es nicht auf, bleibt Stimme 2 stumm und
+nichts ändert sich gegenüber vorher.
 
 Die Engine liefert *keine* Musikdaten mit - jedes Spiel bringt seinen
 eigenen Track mit. dig-demo tut das in =examples/dig-demo/track.h= +
 =track.c=, generiert aus einer MIDI-Datei über
 =examples/dig-demo/tools/midi2console.py= (siehe dort das
-=README-midi2console.md=).
+=README-midi2console.md=). nebelkrone schreibt seinen Track
+(=examples/nebelkrone/track.c=) von Hand und nutzt als einziges
+Beispiel bislang auch den Bass-Kanal - =nebel_bass[]= sind vier lange
+Grundton-Haltetöne (A2/E2/G2/A2) unter den Melodiephrasen.
 
 * Die Beispiele (=examples/=)
 Jedes Beispiel ist in sich geschlossen (eigene Tile-IDs, eigene
@@ -492,8 +534,108 @@ seiner Spielmechanik orientiert.
   ein Grund, vorher beim Dorfältesten vorbeizuschauen, statt eine
   weitere Kartenprüfung im Code zu brauchen.
 - Eigener, handgeschriebener Musik-Loop (=track.c=, nicht wie bei
-  dig-demo aus MIDI generiert) sowie sfx.h-Ereignisse für Treffer,
+  dig-demo aus MIDI generiert) mit zweistimmigem Bass
+  (=music_init_bass()=, siehe
+  [[*music.h - Noten-Sequencer]]) sowie sfx.h-Ereignisse für Treffer,
   Fund, Gefahr und Tod.
+- =tools/png2tileset.py= (analog zu dig-demos =tools/midi2console.py=
+  für Musik): wandelt ein beliebiges Bild offline in ein
+  =sprite16_t=-Kachel-Array + Index-Raster um - Farben werden auf die
+  16-Farb-Engine-Palette quantisiert (optional mit Floyd-Steinberg-
+  Dithering), Transparenz kommt aus dem Alphakanal oder einer
+  Chroma-Key-Farbe. Da die Engine weder Bild-Decoder noch Dateisystem
+  hat (=-nostdlib=, SD-Karte unimplementiert), ist das der einzige Weg,
+  externe Bilder einzubinden - als zur Kompilierzeit mitgebackene
+  C-Daten, nicht als Laufzeit-Asset. Siehe
+  =tools/README-png2tileset.md=.
+
+** gamebook-template - story-neutrale Vorlage
+=main.c= aus nebelkrone ist bewusst datengetrieben - die eigentliche
+Geschichte steckt komplett in =story.h=/=story.c=, nichts davon ist in
+=main.c= selbst verdrahtet. gamebook-template extrahiert genau diese
+Trennung als eigenständiges, lauffähiges Beispiel: dieselbe Engine
+(=main.c= praktisch unverändert), aber mit einer bewusst als Platzhalter
+erkennbaren Acht-Szenen-Geschichte statt Nebelkrones eigentlichem
+Abenteuer - eine Szene pro =NodeKind= (Text mit Verzweigung, Probe,
+Gegenstands-Vergabe, Kampf mit Sieg/Flucht-Verzweigung, beide Enden),
+gerade genug, um den ganzen Mechanismus einmal durchzuspielen, bevor man
+ihn ersetzt.
+
+Was dabei generalisiert wurde, gegenüber der Nebelkrone-spezifischen
+=main.c=:
+
+- Titelbildschirm-Text kommt aus =story.h=-Konstanten
+  (=GAME_TITLE=/=GAME_TAGLINE=/=GAME_PREMISE_1..3=) statt aus
+  hartkodierten Strings in =main.c=.
+- Der Heiltrank-Kampfmechanismus heisst jetzt generisch
+  =FLAG_HEAL_ITEM= (statt =FLAG_POTION=), mit Menütext, Heilbetrag und
+  Trink-Meldung ebenfalls als =story.h=-Konstanten
+  (=HEAL_ITEM_LABEL=/=HEAL_ITEM_AMOUNT=/=HEAL_ITEM_USE_MESSAGE=) - wird
+  nie benutzt, wenn keine Szene das Flag vergibt.
+- Die Sterbemeldung bei einer verlorenen Kampfrunde wird jetzt aus dem
+  Gegnernamen zusammengesetzt (=e->name=) statt einen bestimmten
+  Monsternamen hart zu kodieren - jeder neue Eintrag in der
+  =Enemy=-Tabelle bekommt so automatisch eine passende Meldung.
+- Nebelkrones "So nah - die Krone war schon dein"-Zusatzzeile auf dem
+  Game-Over-Bildschirm ist eine reine Erzähl-Verzierung fuer genau diese
+  eine Geschichte und wurde aus der Vorlage entfernt statt generalisiert
+  - genau die Art Detail, die man sich in seiner eigenen Kopie selbst
+  wieder dazuschreibt.
+
+Fest im Mechanismus (nicht pro Geschichte konfigurierbar): die drei
+Eigenschaften MUT/KLUGHEIT/GEWANDTHEIT, W20-Proben, Kampf gegen
+GEWANDTHEIT, die fünf =NodeKind=s. =SCENE_INTRO= und =SCENE_END_LOSE=
+sind Pflichtnamen (siehe =story.h=s Kommentar) - jede neue Geschichte
+braucht einen Startpunkt und ein universelles Todesziel für
+=apply_damage()=.
+
+=art.c=/=art.h=/=tileset16.c= und =track.c=/=track.h= wurden praktisch
+unverändert übernommen - die Kachel-Illustrationen (Dorf, Sumpf, Ruine,
+Kampf-/Siegkammer, Tod) und der gemäßigte Musik-Loop sind generische
+Fantasy-Versatzstücke, keine Nebelkrone-Lore, und taugen als
+Startbelegung für eine neue Geschichte genauso wie zum Ersetzen.
+=tools/png2tileset.py= liegt ebenfalls bei.
+
+Neue Geschichte anfangen: Ordner nach =examples/<name>/= kopieren, im
+Wurzel-=Makefile= zu =EXAMPLES= hinzufügen, dann =story.h=/=story.c=
+(und optional Kunst/Musik) ersetzen - siehe
+=examples/gamebook-template/README.md= für die Kurzanleitung.
+
+** loderunner - Lode-Runner-artiges Grab-und-Fluchtspiel
+Ein Digger-Verfolgungsspiel im Stil von Lode Runner (1983): auf einer
+Kachelkarte alles Gold einsammeln und den (dann offenen) Ausgang
+erreichen, während Wächter jagen - durch das Graben temporärer Löcher
+in Ziegel-Kacheln lassen sich Wächter (oder man selbst, bei
+Unachtsamkeit) fangen: wer beim Zufüllen noch im Loch steht, stirbt.
+Vereinfacht gegenüber dem Original: keine Seile (Leitern allein
+übernehmen die Vertikalbewegung), Wächter nutzen eine gierige
+Verfolgungs-Heuristik (dieselbe Idee wie Grogs Verfolgung in
+grogs-revenge) statt echter Pfadsuche, kein Steuern in der Luft
+während des Fallens.
+
+- Bewegung ist rasterbasiert wie bei dig-demo/grogs-revenge (nicht
+  pixelglatt wie scroller-demo): =has_support()= prüft pro Tick, ob die
+  aktuelle Position eine Leiter ist oder der Kachel darunter fest ist -
+  sonst fällt die Figur automatisch ein Feld pro Tick.
+- Graben braucht zwei gleichzeitige Eingaben (Richtung halten + Knopf),
+  da der Joystick nur einen Aktionsknopf hat, anders als das Original
+  mit getrennten Grab-Links/Grab-Rechts-Tasten. Ziel ist die
+  Ziegel-Kachel diagonal unterhalb der gehaltenen Richtung.
+- Gegrabene Löcher (=T_HOLE=) sind temporär (=holes[]=, ca. 4,5 s Timer)
+  und werden beim Verfallen wieder zu Ziegel - wer zu diesem Zeitpunkt
+  noch genau dort steht (Spieler oder Wächter), stirbt; ein
+  gefangener Wächter kann in der Zwischenzeit selbststständig
+  herausklettern (mit Verzögerung), der Spieler jederzeit per HOCH.
+- Drei Level (=levels.c=, nach demselben Muster wie grogs-revenges
+  =mountains.c=: =place()=-Hilfsfunktion + Klarstruktur pro Level),
+  alle offline mit einem kleinen Python-Simulator derselben
+  Bewegungsregeln (Schwerkraft, Leiterklettern, Ziegel/Stahl blockieren)
+  auf Erreichbarkeit *ohne Graben* geprüft, bevor sie hier eingetragen
+  wurden - Graben ist ein Werkzeug gegen Wächter, keine Voraussetzung,
+  um an Gold oder den Ausgang zu kommen.
+- Zwei animierte Figuren (Läufer/Wächter, je zwei Lauf-Frames) plus ein
+  gemeinsamer Poof-Effekt für Fallen-Tode, wie schon in invaders und
+  nebelkrone.
 
 * Erweiterungsmöglichkeiten
 Realistische nächste Schritte, sortiert grob nach Aufwand:
@@ -523,10 +665,13 @@ Realistische nächste Schritte, sortiert grob nach Aufwand:
   zwischen Sitzungen.
 - Zweiter, austauschbarer Font (=font6x8.h= liegt schon bereit) für
   kompakteren HUD-Text.
+- loderunner: Seile (hangelnde Horizontalbewegung) als zweite
+  Vertikal-/Diagonal-Mechanik neben Leitern, echte Wächter-Pfadsuche
+  statt der gierigen Heuristik, mehr als drei Level.
 
 * Schlusswort
 Dieses Dokument beschreibt die Engine (Takt, Display, Framebuffer,
-Sprites, Text, Joystick, Audio, GameAPI) sowie die sechs Beispiele, die
+Sprites, Text, Joystick, Audio, GameAPI) sowie die acht Beispiele, die
 aktuell darauf aufbauen. Bei Erweiterungen: neue Engine-Funktionalität
 gehört nach =include/=/=src/= (allgemeingültig, kein Spielwissen), alles
 Spielspezifische in einen neuen oder bestehenden Ordner unter
