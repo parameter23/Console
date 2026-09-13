@@ -314,6 +314,20 @@ Ein einziger, geteilter SPI1-Treiber - wer SPI1 nutzt (Display und
 optional der W25Q128-Flash, siehe unten), ruft =spi1_setup()= einmal
 auf und nutzt danach die Transfer-Funktionen.
 
+=spi1_setup()= konfiguriert SPI-Mode 3 (CPOL=1, CPHA=1) - Pflicht für
+den W25Q128, der nur Mode 0 oder Mode 3 unterstützt. *Vorsicht bei
+libopencm3's CPHA-Konstanten*: =SPI_CR1_CPHA_CLK_TRANSITION_1= /
+=SPI_CR1_CPHA_CLK_TRANSITION_2= sind nach der abtastenden Flanke
+benannt, nicht nach dem CPHA-Bitwert - TRANSITION_1 = CPHA 0,
+TRANSITION_2 = CPHA 1. Das hat sich hier einmal real als Bug
+eingeschlichen (TRANSITION_1 mit CPOL=1 kombiniert ergibt Mode 2, nicht
+Mode 3) und komplett verhindert, dass der W25Q128 auf JEDEC-ID-Reads
+antwortet, obwohl Verdrahtung, Versorgungsspannung und WP#/HOLD# alle
+in Ordnung waren - stundenlange Hardware-Fehlersuche auf zwei Boards,
+bis der Modus als Ursache auffiel. Bei jeder Änderung an
+=spi_init_master()=-Aufrufen für dieses Projekt die Zuordnung
+gegenprüfen.
+
 #+BEGIN_SRC c
 void spi1_setup(uint32_t baudrate_div);
 void spi1_write8(uint8_t data);
@@ -350,7 +364,20 @@ void w25q_write_page(uint32_t addr, const uint8_t *buf, uint32_t len);
 (=ili9488_init()= vorher aufgerufen, z. B. weil =game_run()= das schon
 erledigt hat). =w25q_read_id()= sollte vor allem anderen einmal
 aufgerufen werden, um zu prüfen, ob der Chip überhaupt bestückt/
-angeschlossen ist (echter W25Q128: 0xEF 0x40 0x18).
+angeschlossen ist (echter W25Q128: 0xEF 0x40 0x18, ein W25Q80 auf dem
+gleichen Footprint meldet 0xEF 0x40 0x14).
+
+Für ein original WeAct BlackPill v3.0 ist CS/SCK/MISO/MOSI = PA4/PA5/
+PA6/PA7 (siehe [[*Pinbelegung (STM32F411)]]) durch Messung bestätigt -
+keine abweichende Pinbelegung. Zwei reale Bring-up-Fallstricke, beide
+auf zwei Boards reproduziert:
+- *C15 (Entkopplungskondensator am Flash) muss bestückt sein.* Fehlt
+  er, bricht VCC während der SPI-Bursts kurz ein/wird verrauscht - der
+  Chip antwortet dann gar nicht auf JEDEC-ID-Reads, obwohl er sauber
+  verlötet ist und mit dem Multimeter 3,3V an VCC anliegen.
+- *SPI-Modus*: siehe die Warnung zu =SPI_CR1_CPHA_CLK_TRANSITION_1/2=
+  in [[*SPI-Abstraktion (=include/spi.h=)]] - das war die eigentliche
+  Ursache, nachdem C15 schon bestückt war.
 
 Wie bei jedem NOR-Flash kann =w25q_write_page()= nur Bits von 1 auf 0
 setzen - vorher geschriebene Adressen müssen erst mit

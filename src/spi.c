@@ -30,11 +30,17 @@ void spi1_setup(uint32_t baudrate_div)
 
     spi_disable(SPI1);
 
+    /* Mode 3 (CPOL=1, CPHA=1) - required by the W25Q128 (only supports
+     * Mode 0 or Mode 3, see w25q128.h). libopencm3 names its CPHA
+     * constants by which clock edge captures data, not by the CPHA bit
+     * value: TRANSITION_1 = CPHA 0, TRANSITION_2 = CPHA 1 - easy to
+     * misread as the other way round (this used to be TRANSITION_1
+     * here, which is actually Mode 2 and not supported by the flash). */
     spi_init_master(
         SPI1,
         baudrate_div,
         SPI_CR1_CPOL_CLK_TO_1_WHEN_IDLE,
-        SPI_CR1_CPHA_CLK_TRANSITION_1,
+        SPI_CR1_CPHA_CLK_TRANSITION_2,
         SPI_CR1_DFF_8BIT,
         SPI_CR1_MSBFIRST
     );
