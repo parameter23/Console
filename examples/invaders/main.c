@@ -599,6 +599,7 @@ static void step_formation(void)
     if (alien_origin_y + max_row * ALIEN_SPACING_Y + 16 >= PLAYER_Y - 4) {
         state = STATE_TOD;
         say("DIE ALIENS SIND GELANDET!");
+        sfx_play(SFX_SIREN);
     }
 }
 
