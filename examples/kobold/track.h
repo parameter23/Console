@@ -1,26 +1,29 @@
 /**
  * @file track.h
- * @brief A short, original, mood-neutral background loop - a reasonable
- *        default for any fantasy gamebook built on this template.
- *        Hand-written (not MIDI-derived, unlike dig-demo's track.h), in
- *        A minor. Replace it with your own track if you want different
- *        music; nothing else needs to change to do that (see
- *        music_init()/music_init_bass() in main.c's init callback).
+ * @brief Background music for "Der Kobold" - the melody and bass line
+ *        of death_waltz.mid (tools/death_waltz.mid), extracted with
+ *        examples/dig-demo/tools/midi2console.py --track 0 (melody,
+ *        "Strings") and --track 2 (bass, "Bass Guitar"). Those were
+ *        the highest- and lowest-pitched of the file's six tracks
+ *        respectively - see tools/README-midi2console.md.
  */
-#ifndef GAMEBOOK_TEMPLATE_TRACK_H
-#define GAMEBOOK_TEMPLATE_TRACK_H
+#ifndef KOBOLD_TRACK_H
+#define KOBOLD_TRACK_H
 
 #include "music.h"
 
-/** @brief The melody, 0/0-terminated. Pass to music_init(). */
-extern const MusicNote template_track[];
+/**
+ * @brief The melody, 0/0-terminated. Pass to music_init(). Padded with
+ *        a trailing rest so its total duration matches
+ *        death_waltz_bass[]'s (115200 ms), keeping the two
+ *        independently-looping voices in phase across loop boundaries.
+ */
+extern const MusicNote death_waltz_melody[];
 
 /**
- * @brief A simple root-note pedal bass line under the melody, played on
- *        the engine's optional third voice (see music_init_bass()).
- *        Its four notes sum to the same 8800 ms as template_track[], so
- *        the two channels stay in phase across loops.
+ * @brief The bass line, played on the engine's optional third voice
+ *        (see music_init_bass()).
  */
-extern const MusicNote template_bass[];
+extern const MusicNote death_waltz_bass[];
 
 #endif

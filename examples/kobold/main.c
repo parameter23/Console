@@ -327,8 +327,8 @@ static void game_init(void)
     w25q_init(); /* SPI1 is already running - game_run() set it up */
     sfx_init();
     rng_state ^= ((uint32_t)joystick_get_adc_x() << 16) ^ joystick_get_adc_y();
-    music_init(template_track);
-    music_init_bass(template_bass);
+    music_init(death_waltz_melody);
+    music_init_bass(death_waltz_bass);
     new_game();
     state = STATE_TITEL;
 }
