@@ -100,11 +100,23 @@ Anpassung:
 
 **Dithering ist hier standardmaessig an** (bei `png2tileset.py` ist es
 standardmaessig *aus*) - der umgekehrte Kompromiss, weil gemalte/
-fotografische Bilder mit Farbverlaeufen auf 16 Farben durch Dithering
-deutlich besser aussehen, waehrend flaechige Pixel-Art meist ohne
-sauberer wirkt. Bei kontrastreichen/grafischen Motiven kann `--no-dither`
-trotzdem das bessere Ergebnis liefern - beides an einem Testbild
-vergleichen.
+fotografische Bilder mit Farbverlaeufen durch Dithering deutlich besser
+aussehen, waehrend flaechige Pixel-Art meist ohne sauberer wirkt. Bei
+kontrastreichen/grafischen Motiven kann `--no-dither` trotzdem das
+bessere Ergebnis liefern - beides an einem Testbild vergleichen.
+
+## Farbpalette
+
+Seit `fb8_init_palette()` (=src/framebuffer8.c=) alle 256 statt nur 16
+Paletteneintraege befuellt, quantisiert dieses Skript standardmaessig
+gegen alle 256: die 16 benannten C64-Farben plus einen 6x6x6-RGB-Wuerfel
+(216 Farben) und eine 24-stufige Graurampe (24 Farben) - siehe
+`DEFAULT_PALETTE_RGB565` im Skript, die exakt mit `fb8_palette[]`
+uebereinstimmt (per Hand synchron gehalten; `--palette-from` liest
+stattdessen `base_palette[]` *und* `ext_palette[]` direkt aus einer
+echten `framebuffer8.c`). Damit sehen die erzeugten Bilder auf echter
+Hardware jetzt deutlich weniger bandingartig/grobkoernig aus als mit der
+alten 16-Farb-Quantisierung.
 
 ## Ergebnis zeichnen
 

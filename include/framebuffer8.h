@@ -47,8 +47,13 @@ uint8_t fb8_get_pixel(int x, int y);
 void fb8_fill_rect(int x, int y, int w, int h, uint8_t color);
 
 /**
- * @brief Loads the default C64-style 16-color palette into fb8_palette[0..15]
- *        and zeroes the rest. Call once before drawing anything.
+ * @brief Loads the full 256-color palette: the C64-style named colors
+ *        into fb8_palette[0..15] (every existing sprite/tile only ever
+ *        references these), and a 6x6x6 RGB color cube + 24-step
+ *        grayscale ramp into fb8_palette[16..255] for quantizing
+ *        photographic/continuous-tone art (see tools/img2fullscreen.py,
+ *        which mirrors this same extended palette). Call once before
+ *        drawing anything.
  */
 void fb8_init_palette(void);
 
