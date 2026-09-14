@@ -359,6 +359,11 @@ static void try_move_path(int dy)
     }
 }
 
+static int forest_in_bounds(int x, int y)
+{
+    return x >= 0 && x < FOREST_W && y >= 0 && y < FOREST_H;
+}
+
 /**
  * @brief Attempts one forest step. The grid's outer edge (0..2 on both
  *        axes) is always impassable, including the entrance cell's
@@ -369,7 +374,7 @@ static void try_move_path(int dy)
 static void try_move_forest(int dx, int dy)
 {
     int nx = fx + dx, ny = fy + dy;
-    if (nx < 0 || nx >= FOREST_W || ny < 0 || ny >= FOREST_H)
+    if (!forest_in_bounds(nx, ny))
         return;
 
     fx = nx;
@@ -538,6 +543,30 @@ static void draw_hud_forest(void)
     draw_text_shadow(4, HUD_Y, line, 1);
 }
 
+/* Top-right corner, clear of the hint/HUD text at the bottom and the
+ * story/choice text block starting at TEXT_Y0. */
+#define COMPASS_CX 296
+#define COMPASS_CY 20
+#define COMPASS_D  14
+
+/**
+ * @brief Draws an arrow for each of the four directions the player can
+ *        currently step in the forest. The full-screen photo
+ *        backgrounds give no other visual cue for this - unlike a
+ *        tile-based room map, there is no wall/path graphic to read.
+ */
+static void draw_compass(void)
+{
+    if (forest_in_bounds(fx, fy - 1))
+        draw_text_shadow(COMPASS_CX - 4, COMPASS_CY - COMPASS_D, "^", 1);
+    if (forest_in_bounds(fx, fy + 1))
+        draw_text_shadow(COMPASS_CX - 4, COMPASS_CY + COMPASS_D, "v", 1);
+    if (forest_in_bounds(fx - 1, fy))
+        draw_text_shadow(COMPASS_CX - COMPASS_D - 4, COMPASS_CY, "<", 1);
+    if (forest_in_bounds(fx + 1, fy))
+        draw_text_shadow(COMPASS_CX + COMPASS_D - 4, COMPASS_CY, ">", 1);
+}
+
 static void draw_ende(void)
 {
     draw_center(8, ende_is_win ? "ENTKOMMEN!" : "GAME OVER",
@@ -570,6 +599,7 @@ static void game_draw(void)
         draw_scene_bg((bg_id_t)forest[fy][fx]);
         draw_center(HINT_Y, txt_hint_forest, 1);
         draw_hud_forest();
+        draw_compass();
         return;
     }
 
