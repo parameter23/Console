@@ -69,37 +69,35 @@ Kopie - =git submodule update --init= nach dem Klonen nicht vergessen.
 ** Übersicht
 | Funktion          | Pin  | Richtung | Peripherie      | Beschreibung             |
 |-------------------+------+----------+-----------------+--------------------------|
-| ILI9488 CS        | PB0  | Output   | GPIO            | Chip Select LCD          |
-| ILI9488 DC        | PA3  | Output   | GPIO            | Data/Command             |
-| ILI9488 RESET     | PA2  | Output   | GPIO            | Display Reset            |
+| ST7789 CS         | PB0  | Output   | GPIO            | Chip Select LCD          |
+| ST7789 DC         | PA3  | Output   | GPIO            | Data/Command             |
+| ST7789 RESET      | PA2  | Output   | GPIO            | Display Reset            |
 | SPI1 SCK          | PA5  | AF5      | SPI1            | Takt, geteilt Display/Flash |
 | SPI1 MOSI         | PA7  | AF5      | SPI1            | Daten, geteilt Display/Flash |
 | SPI1 MISO         | PA6  | AF5      | SPI1            | Daten (nur vom Flash genutzt, Display schreibt nur) |
 | W25Q128 CS        | PA4  | Output   | GPIO            | Chip Select Flash - BlackPill-Onboard-SOI8-Footprint |
-| Touch CS          | PB6  | Output   | GPIO            | Chip Select Touch-Controller (TP_CS), Modul-Pin 26 |
 | Audio PWM Out     | PB4  | AF2      | TIM3_CH1        | PWM-Audio (bewusst *nicht* PA6 - lag dort direkt zwischen SPI1 SCK/MOSI und hat den Display-Link per Übersprechen gestört, siehe =include/sfx.h=) |
-| Joystick UP       | PB13 | Input    | GPIO            | Pull-Up                 |
-| Joystick DOWN     | PB15 | Input    | GPIO            | Pull-Up                 |
+| Joystick UP       | PB10 | Input    | GPIO            | Pull-Up                 |
+| Joystick DOWN     | PB13 | Input    | GPIO            | Pull-Up                 |
 | Joystick LEFT     | PB14 | Input    | GPIO            | Pull-Up                 |
-| Joystick RIGHT    | PB10 | Input    | GPIO            | Pull-Up                 |
+| Joystick RIGHT    | PB15 | Input    | GPIO            | Pull-Up                 |
 | Joystick BUTTON   | PB12 | Input    | GPIO            | Pull-Up                 |
 | Joystick SELECT   | PB1  | Input    | GPIO            | Pull-Up                 |
 | Joystick START    | PB5  | Input    | GPIO            | Pull-Up                 |
-| Joystick ADC X    | PA0  | Analog   | ADC1_IN0        | X-Achse                 |
-| Joystick ADC Y    | PA1  | Analog   | ADC1_IN1        | Y-Achse                 |
+| Joystick ADC X    | PA1  | Analog   | ADC1_IN1        | X-Achse (auf diesem Board vertauscht, siehe Hinweise unten) |
+| Joystick ADC Y    | PA0  | Analog   | ADC1_IN0        | Y-Achse (auf diesem Board vertauscht, siehe Hinweise unten) |
 
 Alle Konstanten liegen in den jeweiligen Modul-Headern
-(=include/ili9488.h=, =include/spi.h=, =include/w25q128.h=,
-=include/touch.h=, =include/sfx.h=, =include/joystick.h=) - dort
-nachschlagen, nicht hier, falls sich mal etwas ändert.
+(=include/st7789.h=, =include/spi.h=, =include/w25q128.h=,
+=include/sfx.h=, =include/joystick.h=) - dort nachschlagen, nicht hier,
+falls sich mal etwas ändert.
 
 ** Hinweise
-- SPI1 (SCK/MISO/MOSI = PA5/PA6/PA7) wird von *drei* Geräten mit
-  getrennter CS-Leitung geteilt: Display (CS PB0), der optionale
+- SPI1 (SCK/MISO/MOSI = PA5/PA6/PA7) wird von *zwei* Geräten mit
+  getrennter CS-Leitung geteilt: Display (CS PB0) und der optionale
   W25Q128-Flash auf dem BlackPill-Onboard-Footprint (CS PA4, fest von
   der Platine vorgegeben - deshalb liegt die Display-CS bewusst *nicht*
-  mehr auf PA4) und der Touch-Controller des LCD-Moduls (CS PB6, siehe
-  =include/touch.h=). Es gibt keine Bus-Arbitrierung über eine einzelne
+  mehr auf PA4). Es gibt keine Bus-Arbitrierung über eine einzelne
   Transaktion hinaus - passt, solange (wie aktuell) alles aus einer
   einzigen Bare-Metal-Hauptschleife läuft und nichts SPI1 nebenläufig
   anfasst.
@@ -110,32 +108,16 @@ nachschlagen, nicht hier, falls sich mal etwas ändert.
   verdrahtet) oder PB3 (JTDO/TRACESWO).
 - ADC-Kanäle nutzen 12-Bit-Auflösung, Sample-Time 144 Zyklen
   (=adc.c=, =ADC_SMPR_SMP_144CYC=).
+- Der Analogstick ist auf diesem konkreten Board X/Y-vertauscht verdrahtet.
+  =JS_ADC_X_PIN=/=JS_ADC_Y_PIN= in =joystick.h= bleiben auf PA0/PA1 stehen
+  (die legen nur fest, welche Pins als Analogeingang konfiguriert werden);
+  die eigentliche Achsenzuordnung passiert getrennt davon über
+  =JS_ADC_X_CHANNEL=/=JS_ADC_Y_CHANNEL= (aktuell 1/0, also vertauscht) -
+  =joystick.c= liest =hal_adc_read()= mit diesen Kanalnummern statt fest
+  mit 0/1. Bei einem anderen Board ggf. auf 0/1 zurückstellen.
 - Eine SD-Karten-Anbindung ist *nicht* implementiert. Für externen
   Speicher gibt es stattdessen =include/w25q128.h= (Onboard-SPI-Flash,
   siehe oben) - kein Dateisystem, nur adressierte Roh-Reads/-Writes.
-
-* Pinbelegung 3,5" RPi LCD 480-320 pixel
-Pin	Funktion	Beschreibung
-1, 17	3.3V	Power positive (3.3V power input)
-2, 4	5V	Power positive (5V power input)
-3, 5, 7, 8, 10, 12, 13, 15, 16	NC	NC
-6, 9, 14, 20, 25	GND	Ground
-11	TP_IRQ	Touch Panel interrupt, low level while the Touch Panel detects touching
-18	LCD_RS	Instruction/Data Register selection
-19	LCD_SI / TP_SI	SPI data input of LCD/Touch Panel
-21	TP_SO	SPI data output of Touch Panel
-22	RST	Reset
-23	LCD_SCK / TP_SCK	SPI clock of LCD/Touch Panel
-24	LCD_CS	LCD chip selection, low active
-26	TP_CS	Touch Panel chip selection, low active
-
-MCU-seitige Zuordnung dieser Pins: LCD_SCK/TP_SCK -> PA5, LCD_SI/TP_SI
--> PA7, TP_SO -> PA6 (LCD_SI hat keine eigene SO-Leitung, das Display
-wird nur beschrieben), LCD_CS -> PB0, TP_CS -> PB6 (=include/touch.h=),
-LCD_RS -> PA3, RST -> PA2. TP_IRQ (Pin 11) ist noch nicht angeschlossen.
-
-ILI9486
-
 
 * Systemstart & Zeitbasis (=clock.h=/=clock.c=)
 ** clock_setup()
@@ -193,7 +175,7 @@ void game_run(const GameAPI *game, uint32_t tick_ms);
    diesem Zeitpunkt bereits mit Farbe 0 gelöscht) und schiebt das Bild
    per =fb8_flush_dma()= raus.
 
-Ein Spiel ruft =clock_setup()=/=ili9488_init()=/etc. also *nie* selbst
+Ein Spiel ruft =clock_setup()=/=st7789_init()=/etc. also *nie* selbst
 auf - das übernimmt =game_run()=.
 
 ** Wahl von tick_ms
@@ -207,21 +189,12 @@ flüssiges Scrollen statt als Raster-Sprünge wirkt (siehe
 [[*scroller-demo - echtes Side-Scrolling (Proof of Concept)]]).
 
 * Framebuffer (=include/framebuffer8.h=)
-4-Bit-indizierter Framebuffer, 480×320 Pixel, 2 Pixel pro Byte
-(Palettenindex 0-15 in =fb8_palette[16]=, RGB565).
-
-Ursprünglich 320×240 bei 1 Byte/Pixel (256 Farben, wie es der Name
-=framebuffer8= noch nahelegt - historisch gewachsen, nicht mehr
-korrigiert). Beim Umstieg auf das größere 480×320-Panel hätte 1
-Byte/Pixel 153.600 statt 76.800 Byte gebraucht und damit nicht mehr in
-die 128 KB RAM des STM32F411CE gepasst. Da Sprites/Tiles ohnehin nie
-mehr als die 16 Basisfarben genutzt haben, packt der Framebuffer jetzt
-2 Pixel/Byte (4 Bit/Pixel) - exakt wieder 76.800 Byte, nur über die
-größere Fläche verteilt.
+8-Bit-indizierter Framebuffer, 320×240 Pixel, 1 Byte pro Pixel
+(Palettenindex in =fb8_palette[256]=, RGB565).
 
 #+BEGIN_SRC c
-#define FB8_WIDTH   480
-#define FB8_HEIGHT  320
+#define FB8_WIDTH   320
+#define FB8_HEIGHT  240
 
 void fb8_clear(uint8_t color);
 void fb8_set_pixel(int x, int y, uint8_t color);
@@ -232,10 +205,11 @@ void fb8_flush(void);       // gepollt, Referenzimplementierung
 void fb8_flush_dma(void);   // DMA-basiert, deutlich schneller - der Normalfall
 #+END_SRC
 
-=fb8_init_palette()= belegt alle 16 Paletteneinträge mit einer
+=fb8_init_palette()= belegt die ersten 16 Paletteneinträge mit einer
 C64-artigen Farbpalette (Schwarz, Weiß, Rot, Cyan, Lila, Grün, Blau,
 Gelb, Orange, Braun, Hellrot, Dunkelgrau, Grau, Hellgrün, Hellblau,
-Hellgrau) - alle Beispiele nutzen diese Indizes konsistent.
+Hellgrau) - alle Beispiele nutzen diese Indizes konsistent. Die
+restlichen 240 Einträge bleiben ungenutzt (Schwarz).
 
 =fb8_flush_dma()= konvertiert Zeile für Zeile in einen RGB565-Zwischen-
 puffer und schiebt ihn per DMA2/Stream3 über SPI1 raus (siehe
@@ -276,38 +250,32 @@ deutschen Text deshalb transliteriert (UE/OE/AE/SS), wie viele
 Ein zweiter, ungenutzter 6×8-Font liegt unter =include/font6x8.h= bereit
 (z. B. für kompakteren HUD-Text in einem künftigen Spiel).
 
-* Display-Treiber ILI9488/ILI9486 (=include/ili9488.h=)
-Löste den ursprünglichen ST7789-Treiber ab, als das Panel auf 480×320
-vergrößert wurde. Gleiche Steuerpins, gleicher MIPI-DBI-kompatibler
-Befehlssatz (0x2A/0x2B/0x2C für die Fensteradressierung).
-
+* Display-Treiber ST7789 (=include/st7789.h=)
 #+BEGIN_SRC c
-void ili9488_init(void);
-void ili9488_set_window(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1);
-void ili9488_draw_pixel(uint16_t x, uint16_t y, uint16_t color);
-void ili9488_fill_rect(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t color);
-void ili9488_cmd(uint8_t cmd);
-void ili9488_data(uint8_t data);
+void st7789_init(void);
+void st7789_set_window(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1);
+void st7789_draw_pixel(uint16_t x, uint16_t y, uint16_t color);
+void st7789_fill_rect(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t color);
+void st7789_cmd(uint8_t cmd);
+void st7789_data(uint8_t data);
 #+END_SRC
 
-=ili9488_init()= ruft =spi1_setup()= auf (siehe unten), macht die
-Reset-Sequenz über den RST-Pin und initialisiert das Panel: Gamma-,
-Power- und VCOM-Register, MADCTL (Querformat), COLMOD (16bpp RGB565),
-Sleep Out, Display On.
+=st7789_init()= ruft =spi1_setup()= auf (siehe unten), macht die
+Reset-Sequenz über den RST-Pin und initialisiert das Panel: MADCTL
+(Querformat), COLMOD (16bpp RGB565), Timing-Register, Display-Inversion
+an, Sleep Out, Display On.
 
-*Wichtig:* Auf dem einen konkret verbauten Panel hat sich das COLMOD
-auf 16bpp/RGB565 als nötig herausgestellt statt der 18bpp/RGB666
-(3 Byte/Pixel), die "echte" ILI9488-Module über SPI oft brauchen -
-Symptom bei RGB666 war ein durchlaufender/springender Bildinhalt
-(alter oberer Bildbereich blutete in den unteren durch), weil der
-Controller die Pixeldaten offenbar als 16bpp interpretiert und sein
-Adresszähler dadurch vor Ende des Frames umlief. Sehr wahrscheinlich
-steckt in dem als "ILI9488" verkauften Modul tatsächlich ein ILI9486 -
-ein bei günstigen 3.5"-SPI-TFT-Modulen häufiges Mislabeling. Da PA6
-(SPI1 MISO) nicht angeschlossen ist, lässt sich die Controller-ID nicht
-per Software auslesen; falls ein anderes Panel verbaut wird, ist das
-COLMOD/Pixelformat (=ili9488_init()=, =fb8_flush()=/=fb8_flush_dma()=
-in =src/framebuffer8.c=) der erste Ansatzpunkt bei Bildfehlern.
+*Hinweis zum SPI-Takt:* dieses Projekt setzte das Display früher testweise
+auf ein ILI9488/ILI9486-Panel (480×320) um; dabei zeigten sich auf
+diesem konkreten Board intermittierende Pixelfehler (einzelne helle
+Punkte, Farbwechsel auf eigentlich statischem Inhalt), die zwei
+unabhängige reale Ursachen hatten: eine knapp bemessene
+Spannungsversorgung *und* ein zu hoher SPI-Takt (DIV_4, 25 MHz) für die
+Verkabelung - beides musste behoben werden, DIV_2 (50 MHz, wie hier
+eingestellt) war nie speziell gegen dieses Problem getestet. Falls beim
+ST7789-Panel ähnliche Bildfehler auftreten, =SPI_CR1_BAUDRATE_FPCLK_DIV_2=
+in =st7789_init()= als Erstes verdächtigen und schrittweise auf DIV_4/
+DIV_8 senken.
 
 * SPI-Abstraktion (=include/spi.h=)
 Ein einziger, geteilter SPI1-Treiber - wer SPI1 nutzt (Display und
@@ -361,7 +329,7 @@ void w25q_write_page(uint32_t addr, const uint8_t *buf, uint32_t len);
 #+END_SRC
 
 =w25q_init()= setzt nur die CS-GPIO auf - SPI1 selbst muss schon laufen
-(=ili9488_init()= vorher aufgerufen, z. B. weil =game_run()= das schon
+(=st7789_init()= vorher aufgerufen, z. B. weil =game_run()= das schon
 erledigt hat). =w25q_read_id()= sollte vor allem anderen einmal
 aufgerufen werden, um zu prüfen, ob der Chip überhaupt bestückt/
 angeschlossen ist (echter W25Q128: 0xEF 0x40 0x18, ein W25Q80 auf dem
