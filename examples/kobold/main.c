@@ -221,7 +221,7 @@ static void draw_choice_line(int y, const char *text, int selected)
     append(buf, &p, selected ? "> " : "  ");
     append(buf, &p, text);
     buf[p] = 0;
-    draw_text_shadow(CHOICE_X, y, buf, selected ? 7 : 12);
+    draw_text_shadow(CHOICE_X, y, buf, selected ? 7 : 1);
 }
 
 /** @brief UP/DOWN cursor movement for a STATE_TEXT choice menu. */
@@ -541,9 +541,9 @@ static void draw_hud_forest(void)
 static void draw_ende(void)
 {
     draw_center(8, ende_is_win ? "ENTKOMMEN!" : "GAME OVER",
-                ende_is_win ? 13 : 2);
-    draw_wrapped(TEXT_X, TEXT_Y0, TEXT_MAX_CHARS, TEXT_LINE_H, ende_text, 15);
-    draw_center(HUD_Y, "DRUECKE DEN KNOPF FUER NEUSTART", 15);
+                ende_is_win ? 13 : 1);
+    draw_wrapped(TEXT_X, TEXT_Y0, TEXT_MAX_CHARS, TEXT_LINE_H, ende_text, 1);
+    draw_center(HUD_Y, "DRUECKE DEN KNOPF FUER NEUSTART", 1);
 }
 
 /** @brief GameAPI draw callback. */
@@ -562,13 +562,13 @@ static void game_draw(void)
 
     if (state == STATE_PATH) {
         draw_scene_bg(BG_PFAD);
-        draw_center(HINT_Y, txt_hint_path, 2);
+        draw_center(HINT_Y, txt_hint_path, 1);
         return;
     }
 
     if (state == STATE_FOREST) {
         draw_scene_bg((bg_id_t)forest[fy][fx]);
-        draw_center(HINT_Y, txt_hint_forest, 2);
+        draw_center(HINT_Y, txt_hint_forest, 1);
         draw_hud_forest();
         return;
     }
@@ -577,7 +577,7 @@ static void game_draw(void)
      * on behind the text, so the screen doesn't flash to something
      * unrelated for a one-line "WEITER" prompt. */
     draw_scene_bg((bg_id_t)forest[fy][fx]);
-    draw_wrapped(TEXT_X, TEXT_Y0, TEXT_MAX_CHARS, TEXT_LINE_H, text_body, 15);
+    draw_wrapped(TEXT_X, TEXT_Y0, TEXT_MAX_CHARS, TEXT_LINE_H, text_body, 1);
     for (int i = 0; i < text_num_choices; i++)
         draw_choice_line(CHOICE_Y0 + i * CHOICE_LINE_H, text_choice_label[i], i == cursor);
 }
