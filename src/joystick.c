@@ -59,9 +59,8 @@ JoystickState joystick_update(void)
 
     last_raw = raw;
 
-    /* PA0 = ADC1_IN0, PA1 = ADC1_IN1 */
-    js_adc_x = hal_adc_read(0);
-    js_adc_y = hal_adc_read(1);
+    js_adc_x = hal_adc_read(JS_ADC_X_CHANNEL);
+    js_adc_y = hal_adc_read(JS_ADC_Y_CHANNEL);
 
     return js;
 }
