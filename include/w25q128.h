@@ -7,7 +7,7 @@
  * That footprint is hard-wired to CS=PA4/SCK=PA5/MISO=PA6/MOSI=PA7 -
  * the same SPI1 bus the display uses. Sharing SCK/MISO/MOSI between
  * two slaves is fine; each just needs its own CS, which is why the
- * display's CS moved to PB0 (see ili9488.h) and left PA4 free here.
+ * display's CS moved to PB0 (see st7789.h) and left PA4 free here.
  *
  * There's no bus arbitration in software beyond "don't do two things
  * at once" - fine as-is because everything in this engine runs from a
@@ -17,7 +17,7 @@
  * flight.
  *
  * Call w25q_init() only after SPI1 is already running (e.g.
- * ili9488_init() has already run, same as sfx_init() assumes for
+ * st7789_init() has already run, same as sfx_init() assumes for
  * TIM3/TIM2) - it does not call spi1_setup() itself.
  */
 #ifndef W25Q128_H

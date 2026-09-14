@@ -4,7 +4,7 @@
  */
 #include "game.h"
 #include "clock.h"
-#include "ili9488.h"
+#include "st7789.h"
 #include "framebuffer8.h"
 
 /** @brief See game_run() in the header for the full contract. */
@@ -13,7 +13,7 @@ void game_run(const GameAPI *game, uint32_t tick_ms)
     clock_setup();
     systick_setup();
 
-    ili9488_init();
+    st7789_init();
     fb8_init_palette();
 
     joystick_init();

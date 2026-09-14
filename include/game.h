@@ -6,7 +6,7 @@
  * A game implements the three GameAPI callbacks (init/update/draw) and
  * hands the struct to game_run(), which owns all hardware bring-up
  * (clock, display, framebuffer, joystick) and the main loop. Individual
- * games never call clock_setup()/ili9488_init()/etc. themselves.
+ * games never call clock_setup()/st7789_init()/etc. themselves.
  */
 #ifndef GAME_H
 #define GAME_H
