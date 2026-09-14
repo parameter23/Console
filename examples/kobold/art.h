@@ -1,13 +1,13 @@
 /**
  * @file art.h
- * @brief Tile art and pre-composed scene illustrations for "Der Kobold" -
- *        inherited tile vocabulary from gamebook-template, five new
- *        illustrations.
- *
- * Every illustration is a 20x5 grid of the engine's normal 16x16
- * sprite16_t tiles (320x80 px, the top third of the screen) - the same
- * tile-grid technique dig-demo uses for its room map, just aimed at
- * static backdrops instead of a walkable map.
+ * @brief Scene illustrations for "Der Kobold". Most are now full-screen
+ *        320x240 photos loaded from the external W25Q128 flash at
+ *        runtime (see bg_flash_slot[] in art.c and
+ *        tools/img2fullscreen.py --format raw) - the same technique
+ *        nebelkrone uses. BG_HAUS (no photo provided) still falls back
+ *        to the original 20x5 tile-grid technique dig-demo uses for its
+ *        room map, filling only the top 320x80 band and leaving the
+ *        rest of the screen whatever fb8_clear() set it to.
  */
 #ifndef KOBOLD_ART_H
 #define KOBOLD_ART_H
@@ -55,12 +55,18 @@ typedef enum {
     BG_MOOR,
     BG_BACH,
     BG_PFAD,
+    BG_WIN,     /* the kobold, ring given: her curse breaks (ending) */
+    BG_ATTACK,  /* the kobold, attacked: she strikes back (ending) */
     BG_COUNT
 } bg_id_t;
 
 /**
- * @brief Draws one pre-composed illustration at the top of the screen
- *        (0,0)..(320,80).
+ * @brief Draws the scene's illustration, filling the whole framebuffer.
+ *        Most scenes load a full-screen photo from the external
+ *        W25Q128 flash (see art.c's bg_flash_slot[]); BG_HAUS falls
+ *        back to the tile-based grid at the top of the screen,
+ *        (0,0)..(320,80), leaving the rest of the framebuffer as
+ *        whatever fb8_clear() set it to.
  * @param bg Which illustration to draw.
  */
 void draw_scene_bg(bg_id_t bg);

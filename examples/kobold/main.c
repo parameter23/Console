@@ -42,6 +42,7 @@
 #include "art.h"
 #include "story.h"
 #include "track.h"
+#include "w25q128.h"
 
 #define TICK_MS 150
 
@@ -96,6 +97,7 @@ static int cheered_up; /* comforted the kobold at least once - required
 
 static int ende_is_win;
 static const char *ende_text;
+static bg_id_t ende_bg;
 
 /* The active STATE_TEXT screen. */
 static const char *text_body;
@@ -145,6 +147,23 @@ static uint32_t rng_next(void)
 /* Text layout helpers                                                  */
 /* ------------------------------------------------------------------- */
 
+/** @brief Draws text with a full 1px black outline for legibility over
+ *         the full-screen photo backgrounds (draw_text() only paints
+ *         "on" glyph pixels, leaving everything else - including
+ *         whatever busy image content sits behind the text - alone). A
+ *         single-corner drop shadow wasn't enough contrast against some
+ *         of the photos - outlining every side is much more robust
+ *         regardless of what's behind any given character. */
+static void draw_text_shadow(int x, int y, const char *s, uint8_t color)
+{
+    static const int8_t dx[8] = { -1, 0, 1, -1, 1, -1, 0, 1 };
+    static const int8_t dy[8] = { -1, -1, -1, 0, 0, 1, 1, 1 };
+
+    for (int i = 0; i < 8; i++)
+        draw_text(x + dx[i], y + dy[i], s, 0);
+    draw_text(x, y, s, color);
+}
+
 /** @brief Greedy word-wrap + draw, honoring explicit '\n' breaks too. */
 static void draw_wrapped(int x, int y, int max_chars, int line_h, const char *s, uint8_t color)
 {
@@ -178,7 +197,7 @@ static void draw_wrapped(int x, int y, int max_chars, int line_h, const char *s,
         if (len > 47) len = 47;
         for (int k = 0; k < len; k++) buf[k] = s[line_start + k];
         buf[len] = 0;
-        draw_text(x, line_y, buf, color);
+        draw_text_shadow(x, line_y, buf, color);
 
         line_y += line_h;
         i = next_i;
@@ -191,7 +210,7 @@ static void draw_center(int y, const char *s, uint8_t color)
     while (s[len]) len++;
     int x = (FB8_WIDTH - len * 8) / 2;
     if (x < 0) x = 0;
-    draw_text(x, y, s, color);
+    draw_text_shadow(x, y, s, color);
 }
 
 /** @brief Draws one menu line, highlighting it with a ">" if selected. */
@@ -202,7 +221,7 @@ static void draw_choice_line(int y, const char *text, int selected)
     append(buf, &p, selected ? "> " : "  ");
     append(buf, &p, text);
     buf[p] = 0;
-    draw_text(CHOICE_X, y, buf, selected ? 7 : 12);
+    draw_text_shadow(CHOICE_X, y, buf, selected ? 7 : 12);
 }
 
 /** @brief UP/DOWN cursor movement for a STATE_TEXT choice menu. */
@@ -281,10 +300,11 @@ static void text_choice(TextAction action, const char *label)
     text_choice_action[i] = action;
 }
 
-static void go_ende(int win, const char *text)
+static void go_ende(int win, const char *text, bg_id_t bg)
 {
     ende_is_win = win;
     ende_text = text;
+    ende_bg = bg;
     state = STATE_ENDE;
     sfx_play(win ? SFX_PICKUP : SFX_EXPLOSION);
 }
@@ -305,6 +325,7 @@ static void new_game(void)
 /** @brief GameAPI init callback. */
 static void game_init(void)
 {
+    w25q_init(); /* SPI1 is already running - game_run() set it up */
     sfx_init();
     rng_state ^= ((uint32_t)joystick_get_adc_x() << 16) ^ joystick_get_adc_y();
     music_init(template_track);
@@ -357,7 +378,7 @@ static void try_move_forest(int dx, int dy)
 
     turns++;
     if (turns >= MAX_TURNS)
-        go_ende(0, txt_lose_sleep);
+        go_ende(0, txt_lose_sleep, BG_WALD);
 }
 
 /** @brief BTN at the player's current forest cell: look around / interact. */
@@ -415,7 +436,7 @@ static void confirm_choice(void)
 
     case ACTION_RING_WEAR:
         ring_taken = 1;
-        go_ende(0, txt_lose_ring);
+        go_ende(0, txt_lose_ring, BG_WALD);
         break;
 
     case ACTION_RING_POCKET:
@@ -427,7 +448,7 @@ static void confirm_choice(void)
 
     case ACTION_GIVE_RING:
         has_ring = 0;
-        go_ende(1, txt_win);
+        go_ende(1, txt_win, BG_WIN);
         break;
 
     case ACTION_CHEER_UP:
@@ -438,7 +459,7 @@ static void confirm_choice(void)
         break;
 
     case ACTION_ATTACK:
-        go_ende(0, txt_lose_angriff);
+        go_ende(0, txt_lose_angriff, BG_ATTACK);
         break;
     }
 }
@@ -514,7 +535,7 @@ static void draw_hud_forest(void)
         append(line, &p, "   RING BEI DIR");
 
     line[p] = 0;
-    draw_text(4, HUD_Y, line, 1);
+    draw_text_shadow(4, HUD_Y, line, 1);
 }
 
 static void draw_ende(void)
@@ -534,7 +555,7 @@ static void game_draw(void)
     }
 
     if (state == STATE_ENDE) {
-        draw_scene_bg(BG_WALD);
+        draw_scene_bg(ende_bg);
         draw_ende();
         return;
     }
