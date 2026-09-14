@@ -39,6 +39,27 @@ def ticks_to_ms(ticks: int, ticks_per_beat: int, tempo_us_per_beat: int) -> floa
     return ticks * tempo_us_per_beat / ticks_per_beat / 1000.0
 
 
+def global_tempo_segments(mid: "mido.MidiFile"):
+    """Tempo map built from ALL tracks merged, not just the one being
+    converted. Standard Format-1 MIDI files conventionally store tempo
+    (set_tempo) meta events only on track 0 (the "conductor" track);
+    the individual instrument tracks usually carry none of their own.
+    Building the tempo map from a single non-zero track would then
+    silently fall back to the MIDI default of 120 BPM for its entire
+    duration, throwing off every absolute ms timestamp whenever the
+    song's real tempo differs (as it did for death_waltz.mid's Bass
+    Guitar track: extracted at the wrong 120 BPM default rather than
+    the song's actual 100 BPM, compressing its total duration by 20%
+    relative to a track that happened to carry the tempo event itself)."""
+    segments = [(0, 500000)]  # MIDI default: 120 BPM
+    tick = 0
+    for msg in mido.merge_tracks(mid.tracks):
+        tick += msg.time
+        if msg.type == "set_tempo":
+            segments.append((tick, msg.tempo))
+    return segments
+
+
 def merge_adjacent(notes):
     """Merge adjacent identical entries."""
     out = []
@@ -104,15 +125,10 @@ def midi_to_notes(
     if not events:
         raise ValueError("Im gewählten Track wurden keine MIDI-Noten gefunden.")
 
-    # MIDI tempo can change. For accurate timing, build tempo segments.
-    tempo = 500000
-    tempo_segments = [(0, tempo)]
-    tick = 0
-    for msg in track:
-        tick += msg.time
-        if msg.type == "set_tempo":
-            tempo = msg.tempo
-            tempo_segments.append((tick, tempo))
+    # MIDI tempo can change. For accurate timing, build tempo segments
+    # from the whole file, not just this track - see
+    # global_tempo_segments()'s docstring for why.
+    tempo_segments = global_tempo_segments(mid)
 
     def tick_to_ms(t):
         total = 0.0
