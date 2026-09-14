@@ -41,6 +41,16 @@ void game_run(const GameAPI *game, uint32_t tick_ms)
             last_tick += tick_ms;
             if (game->update)
                 game->update(&js, tick_ms);
+
+            /* js was polled once for this whole catch-up burst - raw
+             * (held) state is still valid for every simulated tick, but
+             * pressed/released/repeat are one-shot edges. Without
+             * clearing them, a single button press gets replayed into
+             * every extra catch-up update (e.g. double-stepping a menu
+             * cursor) whenever a frame runs behind. */
+            js.pressed = 0;
+            js.released = 0;
+            js.repeat = 0;
         }
 
         fb8_clear(0);
