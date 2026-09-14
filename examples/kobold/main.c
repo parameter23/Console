@@ -34,7 +34,6 @@
  */
 #include "game.h"
 #include "framebuffer8.h"
-#include "sprite16.h"
 #include "text.h"
 #include "sfx.h"
 #include "music.h"
