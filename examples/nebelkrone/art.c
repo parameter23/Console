@@ -1,10 +1,16 @@
 /**
  * @file art.c
  * @brief Pre-composed 20x5 scene illustrations (see art.h) and the
- *        blitter that draws one at the top of the screen.
+ *        blitter that draws one at the top of the screen. Most scenes
+ *        now use a full-screen photo loaded from the external W25Q128
+ *        flash instead (see bg_flash_slot[] below) - the tile grids
+ *        stay as the fallback for any bg_id_t without one (currently
+ *        just BG_DEATH).
  */
 #include "art.h"
 #include "sprite16.h"
+#include "framebuffer8.h"
+#include "w25q128.h"
 
 /* BG_VILLAGE: night village, moon, house cluster */
 static const uint8_t bg_village[BG_ROWS][BG_COLS] = {
@@ -89,9 +95,41 @@ static const uint8_t (*const bg_table[BG_COUNT])[BG_COLS] = {
     [BG_DEATH]           = bg_death,
 };
 
+/* Each slot is one 320x240 raw image (FB8_WIDTH*FB8_HEIGHT bytes,
+ * framebuffer8[] layout) on the external W25Q128, rounded up to the
+ * next 4KB sector boundary - see tools/img2fullscreen.py --format raw
+ * and examples/flash-uploader/. Upload order (slot 0..6) must be:
+ * Kobold.jpg, Markt.jpg, Moor.jpg, Ruine_geschlossen.jpg,
+ * Ruine_offen.jpg, Hexenhaus2.jpg, Waldweg.jpg. */
+#define BG_IMG_SLOT_SIZE  (((FB8_WIDTH * FB8_HEIGHT + 4095u) / 4096u) * 4096u)
+
+/* Slot index per bg_id_t, or -1 to fall back to the tile-based
+ * bg_table[] illustration above. BG_RUIN_INSIDE/BG_RUIN_CHAMBER are the
+ * least confident guesses (Waldweg/Hexenhaus2 don't have as clean a
+ * thematic match as the others) - check these first if a scene's photo
+ * looks wrong. BG_DEATH has no matching photo, so it keeps its
+ * tile-based fog background. */
+static const int8_t bg_flash_slot[BG_COUNT] = {
+    [BG_VILLAGE]        = 1,  /* Markt.jpg */
+    [BG_SWAMP]           = 2,  /* Moor.jpg */
+    [BG_RUIN]            = 3,  /* Ruine_geschlossen.jpg */
+    [BG_RUIN_INSIDE]     = 6,  /* Waldweg.jpg - uncertain */
+    [BG_RUIN_CHAMBER]    = 5,  /* Hexenhaus2.jpg - uncertain */
+    [BG_RUIN_TOP_FIGHT]  = 0,  /* Kobold.jpg */
+    [BG_RUIN_TOP_WON]    = 4,  /* Ruine_offen.jpg */
+    [BG_DEATH]           = -1, /* no photo - tile fallback */
+};
+
 /** @brief See draw_scene_bg() in the header for the full contract. */
 void draw_scene_bg(bg_id_t bg)
 {
+    int8_t slot = bg_flash_slot[bg];
+    if (slot >= 0) {
+        w25q_read((uint32_t)slot * BG_IMG_SLOT_SIZE, framebuffer8,
+                   (uint32_t)FB8_WIDTH * (uint32_t)FB8_HEIGHT);
+        return;
+    }
+
     const uint8_t (*grid)[BG_COLS] = bg_table[bg];
 
     for (int row = 0; row < BG_ROWS; row++)

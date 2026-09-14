@@ -35,6 +35,7 @@
 #include "art.h"
 #include "story.h"
 #include "track.h"
+#include "w25q128.h"
 
 #define TICK_MS 60
 
@@ -132,6 +133,23 @@ static int d20(void)
 /* Text layout helpers                                                  */
 /* ------------------------------------------------------------------- */
 
+/** @brief Draws text with a full 1px black outline for legibility over
+ *         the full-screen photo backgrounds (draw_text() only paints
+ *         "on" glyph pixels, leaving everything else - including
+ *         whatever busy image content sits behind the text - alone). A
+ *         single-corner drop shadow wasn't enough contrast against
+ *         some of the photos - outlining every side is much more
+ *         robust regardless of what's behind any given character. */
+static void draw_text_shadow(int x, int y, const char *s, uint8_t color)
+{
+    static const int8_t dx[8] = { -1, 0, 1, -1, 1, -1, 0, 1 };
+    static const int8_t dy[8] = { -1, -1, -1, 0, 0, 1, 1, 1 };
+
+    for (int i = 0; i < 8; i++)
+        draw_text(x + dx[i], y + dy[i], s, 0);
+    draw_text(x, y, s, color);
+}
+
 /** @brief Greedy word-wrap + draw, honoring explicit '\n' breaks too. */
 static void draw_wrapped(int x, int y, int max_chars, int line_h, const char *s, uint8_t color)
 {
@@ -165,7 +183,7 @@ static void draw_wrapped(int x, int y, int max_chars, int line_h, const char *s,
         if (len > 47) len = 47;
         for (int k = 0; k < len; k++) buf[k] = s[line_start + k];
         buf[len] = 0;
-        draw_text(x, line_y, buf, color);
+        draw_text_shadow(x, line_y, buf, color);
 
         line_y += line_h;
         i = next_i;
@@ -178,7 +196,7 @@ static void draw_center(int y, const char *s, uint8_t color)
     while (s[len]) len++;
     int x = (FB8_WIDTH - len * 8) / 2;
     if (x < 0) x = 0;
-    draw_text(x, y, s, color);
+    draw_text_shadow(x, y, s, color);
 }
 
 /** @brief Draws one menu line, highlighting it with a ">" if selected. */
@@ -189,7 +207,7 @@ static void draw_choice_line(int y, const char *text, int selected)
     append(buf, &p, selected ? "> " : "  ");
     append(buf, &p, text);
     buf[p] = 0;
-    draw_text(CHOICE_X, y, buf, selected ? 7 : 12);
+    draw_text_shadow(CHOICE_X, y, buf, selected ? 7 : 12);
 }
 
 /* ------------------------------------------------------------------- */
@@ -304,6 +322,7 @@ static void story_start(void)
 /** @brief GameAPI init callback. */
 static void nebel_init(void)
 {
+    w25q_init(); /* SPI1 is already running - game_run() set it up */
     sfx_init();
     rng_state ^= ((uint32_t)joystick_get_adc_x() << 16) ^ joystick_get_adc_y();
     music_init(nebel_track);
@@ -477,7 +496,7 @@ static void draw_hud(void)
     append(line, &p, num);
 
     line[p] = 0;
-    draw_text(4, HUD_Y, line, 1);
+    draw_text_shadow(4, HUD_Y, line, 1);
 }
 
 static void draw_combat_status(void)
@@ -499,7 +518,7 @@ static void draw_combat_status(void)
     append(line, &p, " LP");
 
     line[p] = 0;
-    draw_text(TEXT_X, COMBAT_STATUS_Y, line, 10);
+    draw_text_shadow(TEXT_X, COMBAT_STATUS_Y, line, 10);
 }
 
 static void draw_ende(void)

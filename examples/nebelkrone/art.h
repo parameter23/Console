@@ -55,8 +55,12 @@ typedef enum {
 } bg_id_t;
 
 /**
- * @brief Draws one pre-composed illustration at the top of the screen
- *        (0,0)..(320,80).
+ * @brief Draws the scene's illustration, filling the whole framebuffer.
+ *        Most scenes load a full-screen photo from the external
+ *        W25Q128 flash (see art.c's bg_flash_slot[]); any bg_id_t
+ *        without one falls back to the original tile-based grid at the
+ *        top of the screen, (0,0)..(320,80), leaving the rest of the
+ *        framebuffer as whatever fb8_clear() set it to.
  * @param bg Which illustration to draw.
  */
 void draw_scene_bg(bg_id_t bg);
