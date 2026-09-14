@@ -24,13 +24,12 @@ include/, src/          Engine (kein main() - reine Bibliothek)
 libopencm3/              Git-Submodul, die HAL-Basis (RCC, GPIO, SPI, ADC, Timer, DMA, ...)
 examples/
   dig-demo/               kleine Demo: Kachelkarte, Sammeln, Graben
-  zauberschloss/          RPG angelehnt an "Zauberschloß" (C64, 1984)
-  grogs-revenge/          Arcade-Spiel angelehnt an "B.C. II: Grog's Revenge" (C64, 1984)
   scroller-demo/          Proof-of-Concept für echtes pixelweises Side-Scrolling
   invaders/               Space-Invaders-artiges Shoot-em-up mit animierten Sprites
   nebelkrone/             Illustriertes Interactive-Fiction-Gamebook im Stil von DSA
   gamebook-template/      Story-neutrale Vorlage, aus nebelkrone extrahiert
-  loderunner/             Lode-Runner-artiges Grab-und-Fluchtspiel
+  w25q128-test/           Hardware-Bring-up-Test für den optionalen W25Q128-Flash
+  flash-uploader/         Ueberspielt eine Host-Datei per Semihosting auf den W25Q128
 Makefile                 Delegiert an examples/*/Makefile
 Doxyfile                 Doxygen-Konfiguration (INPUT: src include examples)
 #+END_SRC
@@ -180,10 +179,9 @@ auf - das übernimmt =game_run()=.
 
 ** Wahl von tick_ms
 =tick_ms= bestimmt, wie oft =update()= läuft - nicht, wie oft gezeichnet
-wird (das passiert immer, jede Iteration). Die drei kachelbasierten
-Beispiele (dig-demo, Zauberschloss, Grogs Revenge) bewegen ihre Figur in
-festen 16px-Schritten alle 150 ms - fühlt sich wie klassische
-Raster-Bewegung an. Das scroller-demo-Beispiel nutzt dagegen 30 ms, damit
+wird (das passiert immer, jede Iteration). Das kachelbasierte dig-demo
+bewegt seine Figur in festen 16px-Schritten alle 150 ms - fühlt sich wie
+klassische Raster-Bewegung an. Das scroller-demo-Beispiel nutzt dagegen 30 ms, damit
 sich Position/Physik nah an jedem Frame ändert und die Kamera als
 flüssiges Scrollen statt als Raster-Sprünge wirkt (siehe
 [[*scroller-demo - echtes Side-Scrolling (Proof of Concept)]]).
@@ -353,9 +351,11 @@ setzen - vorher geschriebene Adressen müssen erst mit
 0xFF zurück), bevor sie neu beschrieben werden können.
 =w25q_write_page()= überschreitet keine 256-Byte-Page-Grenze
 selbstständig - größere/übergreifende Schreibvorgänge muss der Aufrufer
-selbst in Page-Häppchen aufteilen. Es gibt noch keinen Aufrufer im
-Quellbaum (kein Beispiel nutzt bisher Flash-Assets) - reine
-Low-Level-Bausteine zum Draufaufsetzen.
+selbst in Page-Häppchen aufteilen. =examples/flash-uploader= ist der
+Schreib-Aufrufer (streamt eine Host-Datei per Semihosting auf den
+Chip, siehe =examples/flash-uploader/README.md=); nebelkrone liest
+darüber zur Laufzeit seine Szenenfotos (=w25q_read()= in =art.c=s
+=draw_scene_bg()=).
 
 * ADC-Abstraktion (=include/adc.h=)
 Kleiner, generischer ADC1-Wrapper (gepollt, Einzelkonvertierung),
@@ -394,8 +394,8 @@ aus.
   Totzone statt der binären Pfeiltasten, siehe
   [[*invaders - Space-Invaders-artiges Shoot-em-up]]. Die übrigen vier
   Beispiele nutzen ausschließlich die digitalen Richtungstasten/BTN.
-- In dig-demo, Zauberschloss und Grogs Revenge bewegen die Pfeiltasten
-  die Spielfigur um genau ein Tile pro Logik-Tick; BTN löst eine
+- In dig-demo bewegen die Pfeiltasten die Spielfigur um genau ein Tile
+  pro Logik-Tick; BTN löst eine
   kontextabhängige Aktion auf dem Feld aus, dem die Figur zugewandt ist
   bzw. an dem sie steht (Gegenstand aufheben, Tür aufschließen, kämpfen,
   Zoll bezahlen) - das joystick-taugliche Äquivalent zu den
@@ -454,9 +454,8 @@ Drei Verbesserungen gegenüber einem reinen "Ton an/Ton aus":
 Zwei-Ton-Arpeggio (C5→G5) - liest sich eher als "Ding-Ding" denn als
 Sirene. Und =SFX_BEEP= hatte schlicht keinen =case= in =sfx_play()=s
 Switch und fiel auf =default: sfx_stop()= - jeder Aufruf verstummte
-also *alle* Stimmen, statt zu piepsen (betraf scroller-demos Sprung-Sound
-und zwei Stellen in Zauberschloss). Jetzt spielt er einen sauberen,
-kurzen Ton.
+also *alle* Stimmen, statt zu piepsen (betraf u.a. scroller-demos
+Sprung-Sound). Jetzt spielt er einen sauberen, kurzen Ton.
 
 ** music.h - Noten-Sequencer
 Generischer Player für eine =MusicNote[]=-Sequenz über =sfx_play_freq()=
@@ -505,35 +504,10 @@ sammelt Diamanten, HUD zeigt Punktzahl/Leben. Zeigt Kachelkarte
 (=tiles.h=/=tileset16.h=), Sprites, Sound-Event-Mapping (=sound.h=,
 =bd_sound_play()=) und Musik-Wiedergabe im Zusammenspiel.
 
-** zauberschloss - RPG
-Angelehnt an das deutsche C64-Adventure „Zauberschloß" (1984, Dennis
-Merbach): Krone aus dem verschlossenen Schloss des Zauberers stehlen und
-damit entkommen. Vier persistente Räume (=rooms.c=: Eingang, Wachraum,
-Schatzkammer, Thronsaal) über eine Nachbarschaftstabelle verbunden -
-Zustand pro Raum (offene Türen, besiegte Wache, aufgesammelte
-Gegenstände) bleibt beim Verlassen und Wiederbetreten erhalten
-(=tiles_select_map()= schaltet nur den aktiven Kartenpuffer um, baut
-nichts neu). Rätselkette: Schwert in der Schatzkammer holen → Wache im
-Wachraum damit besiegen → Schlüssel findet sich dort → damit die Tür zum
-Thronsaal aufschließen → Krone nehmen (weckt den Zauberer, der einen
-danach im Thronsaal jagt) → zurück zum Eingang und durchs Tor.
-
-** grogs-revenge - Arcade
-Angelehnt an „B.C. II: Grog's Revenge" (C64, 1984, Sydney Development):
-Thor reitet auf seinem Steinrad über drei Berge (=mountains.c=,
-zunehmend schwieriger), sammelt Muscheln, um Peters Zoll zu bezahlen und
-zum nächsten Berg zu gelangen, während Grog ihn jagt (einfache
-Greedy-Verfolgung, siehe =grog_update()= in =main.c=) und Felsen/Löcher
-den Weg versperren. Vereinfacht gegenüber dem Original: ein Bildschirm
-pro Berg (kein seitliches Scrollen innerhalb eines Bergs), keine
-separaten dunklen Höhlen-Level, kein zweiter Gegnertyp (Tiredactyl) -
-alles mögliche Erweiterungen, siehe unten.
-
 ** scroller-demo - echtes Side-Scrolling (Proof of Concept)
 Beantwortet die Frage, ob mit dieser Engine *echtes*, pixelgenaues
-Side-Scrolling möglich ist (ja) - im Unterschied zu den drei
-kachelbasierten Beispielen oben, die sich in festen 16px-Schritten pro
-Logik-Tick bewegen.
+Side-Scrolling möglich ist (ja) - im Unterschied zu dig-demo oben, das
+sich in festen 16px-Schritten pro Logik-Tick bewegt.
 
 - =level.h=/=level.c=: ein Höhenfeld pro Spalte (=ground_row[100]=,
   100 Tiles = 1600px breit) plus Hindernis-/Münz-Overlays - deutlich
@@ -613,13 +587,15 @@ seiner Spielmechanik orientiert.
   eine von drei Heldeneigenschaften - MUT/KLUGHEIT/GEWANDTHEIT - gegen
   einen W20 und verzweigt), =NODE_COMBAT= (rundenbasierter Kampf) und
   =NODE_END_WIN=/=NODE_END_LOSE=.
-- =art.h=/=art.c=/=tileset16.c=: dieselbe Kachelraster-Technik, die
-  dig-demo/Zauberschloss/Grogs-Revenge für ihre Raumkarten nutzen, hier
-  aber als 20×5-Kachelraster (320×80px, oberes Bildschirmdrittel) für
-  acht vorkomponierte Illustrationen (Dorf, Sumpf, Turmruine innen/außen,
-  Kampf- und Siegkammer, Tod) statt einer begehbaren Karte -
-  =draw_scene_bg()= zeichnet einfach das zur aktuellen Szene gehörige
-  Raster.
+- =art.h=/=art.c=/=tileset16.c=: =draw_scene_bg()= lädt für die meisten
+  Szenen (Dorf, Sumpf, Turmruine außen/innen, Kampf- und Siegkammer) ein
+  vollflächiges 320×240-Foto direkt per =w25q_read()= vom externen
+  W25Q128-Flash in den Framebuffer (=bg_flash_slot[]= in =art.c=
+  entscheidet pro Szene den Slot; siehe =tools/img2fullscreen.py
+  --format raw= und =examples/flash-uploader=). Nur die Tod-Szene hat
+  kein passendes Foto und nutzt weiterhin die ursprüngliche
+  20×5-Kachelraster-Technik (320×80px, oberes Bildschirmdrittel, wie
+  dig-demo es für seine Raumkarte nutzt).
 - Schaden ist zentral über =apply_damage()= verdrahtet: jede
   Eigenschaftsprobe kann bei Misserfolg Lebenspunkte kosten, und wenn
   das tödlich ist, springt =apply_damage()= sofort zu einer
@@ -703,54 +679,12 @@ Wurzel-=Makefile= zu =EXAMPLES= hinzufügen, dann =story.h=/=story.c=
 (und optional Kunst/Musik) ersetzen - siehe
 =examples/gamebook-template/README.md= für die Kurzanleitung.
 
-** loderunner - Lode-Runner-artiges Grab-und-Fluchtspiel
-Ein Digger-Verfolgungsspiel im Stil von Lode Runner (1983): auf einer
-Kachelkarte alles Gold einsammeln und den (dann offenen) Ausgang
-erreichen, während Wächter jagen - durch das Graben temporärer Löcher
-in Ziegel-Kacheln lassen sich Wächter (oder man selbst, bei
-Unachtsamkeit) fangen: wer beim Zufüllen noch im Loch steht, stirbt.
-Vereinfacht gegenüber dem Original: keine Seile (Leitern allein
-übernehmen die Vertikalbewegung), Wächter nutzen eine gierige
-Verfolgungs-Heuristik (dieselbe Idee wie Grogs Verfolgung in
-grogs-revenge) statt echter Pfadsuche, kein Steuern in der Luft
-während des Fallens.
-
-- Bewegung ist rasterbasiert wie bei dig-demo/grogs-revenge (nicht
-  pixelglatt wie scroller-demo): =has_support()= prüft pro Tick, ob die
-  aktuelle Position eine Leiter ist oder der Kachel darunter fest ist -
-  sonst fällt die Figur automatisch ein Feld pro Tick.
-- Graben braucht zwei gleichzeitige Eingaben (Richtung halten + Knopf),
-  da der Joystick nur einen Aktionsknopf hat, anders als das Original
-  mit getrennten Grab-Links/Grab-Rechts-Tasten. Ziel ist die
-  Ziegel-Kachel diagonal unterhalb der gehaltenen Richtung.
-- Gegrabene Löcher (=T_HOLE=) sind temporär (=holes[]=, ca. 4,5 s Timer)
-  und werden beim Verfallen wieder zu Ziegel - wer zu diesem Zeitpunkt
-  noch genau dort steht (Spieler oder Wächter), stirbt; ein
-  gefangener Wächter kann in der Zwischenzeit selbststständig
-  herausklettern (mit Verzögerung), der Spieler jederzeit per HOCH.
-- Drei Level (=levels.c=, nach demselben Muster wie grogs-revenges
-  =mountains.c=: =place()=-Hilfsfunktion + Klarstruktur pro Level),
-  alle offline mit einem kleinen Python-Simulator derselben
-  Bewegungsregeln (Schwerkraft, Leiterklettern, Ziegel/Stahl blockieren)
-  auf Erreichbarkeit *ohne Graben* geprüft, bevor sie hier eingetragen
-  wurden - Graben ist ein Werkzeug gegen Wächter, keine Voraussetzung,
-  um an Gold oder den Ausgang zu kommen.
-- Zwei animierte Figuren (Läufer/Wächter, je zwei Lauf-Frames) plus ein
-  gemeinsamer Poof-Effekt für Fallen-Tode, wie schon in invaders und
-  nebelkrone.
-
 * Erweiterungsmöglichkeiten
 Realistische nächste Schritte, sortiert grob nach Aufwand:
 
 - Analogstick auch in den übrigen Beispielen für Bewegung nutzen -
   invaders macht es für die X-Achse bereits vor (=analog_move_delta()=),
   die Y-Achse ist noch ungenutzt.
-- grogs-revenge: zweiter Gegnertyp (Tiredactyl), dunkle Höhlen-Level
-  (Lichtkegel um die Spielfigur statt volle Sichtbarkeit), echtes
-  Scrolling innerhalb eines Bergs (könnte scroller-demos Kamera-Technik
-  wiederverwenden).
-- zauberschloss: weitere Räume/Etagen, Inventar-Anzeige im HUD statt nur
-  J/N-Kürzel.
 - scroller-demo: horizontale Wände/Kollision statt reinem Höhenfeld,
   mehrere Level, Gegner.
 - invaders: Bullet-vs-Bullet-Kollision (Alienschuss wird vom eigenen
@@ -758,23 +692,20 @@ Realistische nächste Schritte, sortiert grob nach Aufwand:
   gleichzeitig ab höheren Wellen.
 - nebelkrone: weitere Kapitel/Verzweigungen, ein zweiter Gegnertyp,
   Inventar-Anzeige im HUD, Speicherstand für den Spielfortschritt
-  zwischen Sitzungen (siehe Speicherstand-Punkt unten - beide Beispiele
-  könnten sich dieselbe Persistenz-Lösung teilen).
-- Einen Aufrufer für =include/w25q128.h= (siehe [[*W25Q128-Flash (=include/w25q128.h=)]]) -
-  der Treiber liegt bereit, aber noch kein Beispiel lädt Level- oder
-  Sprite-Daten tatsächlich zur Laufzeit von dort statt sie
-  einzukompilieren.
+  zwischen Sitzungen (siehe Speicherstand-Punkt unten).
 - Speicherstand auf dem W25Q128 (ein reservierter Sektor) für
-  Fortschritt zwischen Sitzungen.
+  Fortschritt zwischen Sitzungen - nebelkrone lädt darüber bereits
+  seine Szenenbilder zur Laufzeit (=examples/flash-uploader=,
+  =tools/img2fullscreen.py --format raw=), ein Speicherstand-Sektor
+  wäre eine weitere, unabhängige Nutzung desselben Chips.
 - Zweiter, austauschbarer Font (=font6x8.h= liegt schon bereit) für
   kompakteren HUD-Text.
-- loderunner: Seile (hangelnde Horizontalbewegung) als zweite
-  Vertikal-/Diagonal-Mechanik neben Leitern, echte Wächter-Pfadsuche
-  statt der gierigen Heuristik, mehr als drei Level.
 
 * Schlusswort
 Dieses Dokument beschreibt die Engine (Takt, Display, Framebuffer,
-Sprites, Text, Joystick, Audio, GameAPI) sowie die acht Beispiele, die
+Sprites, Text, Joystick, Audio, GameAPI) sowie die fünf Spiel-Beispiele
+(dig-demo, scroller-demo, invaders, nebelkrone, gamebook-template) und
+die W25Q128-Hilfswerkzeuge (=w25q128-test=, =flash-uploader=), die
 aktuell darauf aufbauen. Bei Erweiterungen: neue Engine-Funktionalität
 gehört nach =include/=/=src/= (allgemeingültig, kein Spielwissen), alles
 Spielspezifische in einen neuen oder bestehenden Ordner unter
