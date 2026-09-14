@@ -28,6 +28,15 @@ typedef struct {
     SidWave  wave;
     uint32_t phase;
     uint8_t  active;
+
+    /* AY-3-8910-style extensions (see sfx_set_mixer()/
+     * sfx_voice_use_envelope() in sfx.h) - only consulted for
+     * SID_WAVE_SQUARE voices, and default to plain-tone/off so every
+     * existing voice/effect behaves exactly as before unless a caller
+     * opts in. */
+    uint8_t  tone_enable;
+    uint8_t  noise_enable;
+    uint8_t  use_ay_env;
 } SidVoice;
 
 #define SID_VOICES       3
@@ -56,6 +65,28 @@ typedef struct {
 
 static SidVoice sid_voice[SID_VOICES];
 static uint32_t sid_noise_lfsr = 0xACE1;
+
+/* --------- AY-3-8910-style extensions --------- */
+
+/* Shared noise generator: like sid_noise_lfsr above but clocked by its
+ * own configurable-period phase accumulator (sfx_set_noise_period())
+ * instead of advancing every sample - the real chip's noise generator
+ * is period-controlled too, not free-running at the sample rate. Kept
+ * entirely separate from sid_noise_lfsr so the legacy per-voice
+ * SID_WAVE_NOISE effects (SFX_EXPLOSION/SFX_NOISE_SHORT) are unaffected. */
+static uint32_t ay_noise_lfsr  = 0xACE1u;
+static uint8_t  ay_noise_bit   = 0;
+static uint32_t ay_noise_phase = 0;
+static uint32_t ay_noise_step  = 0;
+
+/* Shared envelope generator: one instance, like the real chip. Any
+ * voice can opt in via sfx_voice_use_envelope(); voices that don't are
+ * unaffected and keep using envelope_tick()'s own attack/release. */
+static SfxEnvShape ay_env_shape   = SFX_ENV_NONE;
+static uint8_t     ay_env_level   = 0;   /* 0..15 */
+static uint16_t    ay_env_rate_ms = 20;
+static uint16_t    ay_env_counter = 0;
+static int8_t       ay_env_dir     = 1;
 
 /* Effektzustand */
 static SfxType  sfx_current      = SFX_NONE;
@@ -126,6 +157,9 @@ void sfx_init(void)
         sid_voice[i].releasing = 0;
         sid_voice[i].pw        = SID_PW_DEFAULT;
         sid_voice[i].wave      = SID_WAVE_SQUARE;
+        sid_voice[i].tone_enable  = 1;
+        sid_voice[i].noise_enable = 0;
+        sid_voice[i].use_ay_env   = 0;
     }
 
     sfx_current      = SFX_NONE;
@@ -133,6 +167,16 @@ void sfx_init(void)
     sfx_param        = 0;
     sfx_divider      = 0;
 
+    ay_noise_lfsr  = 0xACE1u;
+    ay_noise_bit   = 0;
+    ay_noise_phase = 0;
+    sfx_set_noise_period(4000);
+
+    ay_env_shape   = SFX_ENV_NONE;
+    ay_env_level   = 0;
+    ay_env_rate_ms = 20;
+    ay_env_counter = 0;
+    ay_env_dir     = 1;
 }
 
 /**
@@ -145,6 +189,9 @@ void sfx_init(void)
  */
 static void envelope_tick(SidVoice *v)
 {
+    if (v->use_ay_env)
+        return; /* volume driven by ay_envelope_tick() instead */
+
     if (!v->active) {
         v->env = 0;
         return;
@@ -163,6 +210,56 @@ static void envelope_tick(SidVoice *v)
     }
 }
 
+/**
+ * @brief Advances the shared AY-3-8910-style envelope generator by one
+ *        step every ay_env_rate_ms milliseconds, then pushes the
+ *        resulting level (scaled 0..15 -> 0..255) into every voice
+ *        that opted in via sfx_voice_use_envelope(). A no-op while the
+ *        generator is off (SFX_ENV_NONE, the default).
+ */
+static void ay_envelope_tick(void)
+{
+    if (ay_env_shape == SFX_ENV_NONE)
+        return;
+
+    ay_env_counter++;
+    if (ay_env_counter < ay_env_rate_ms)
+        return;
+    ay_env_counter = 0;
+
+    switch (ay_env_shape) {
+    case SFX_ENV_FADE_OUT:
+        if (ay_env_level > 0) ay_env_level--;
+        break;
+
+    case SFX_ENV_FADE_IN:
+        if (ay_env_level < 15) ay_env_level++;
+        break;
+
+    case SFX_ENV_SAWTOOTH:
+        ay_env_level = (ay_env_level >= 15) ? 0 : (uint8_t)(ay_env_level + 1);
+        break;
+
+    case SFX_ENV_TRIANGLE:
+        if (ay_env_dir > 0) {
+            if (ay_env_level >= 15) { ay_env_level = 15; ay_env_dir = -1; }
+            else ay_env_level++;
+        } else {
+            if (ay_env_level == 0) ay_env_dir = 1;
+            else ay_env_level--;
+        }
+        break;
+
+    default:
+        break;
+    }
+
+    uint8_t scaled = (uint8_t)(ay_env_level * 17u); /* 0..15 -> 0..255 */
+    for (int i = 0; i < SID_VOICES; i++)
+        if (sid_voice[i].use_ay_env)
+            sid_voice[i].env = scaled;
+}
+
 /* ---------------------------------------------------------
  * interner 1-ms-Tick für Effekte + Musik
  * (wird aus sid_update über Teiler aufgerufen)
@@ -176,7 +273,15 @@ static void sfx_update_tick(void)
         if (sfx_time_left_ms > 0) {
             sfx_time_left_ms--;
             if (sfx_time_left_ms == 0) {
-                sid_voice[1].releasing = 1;
+                /* Hand voice 1 back to its own attack/release fade and
+                 * restore plain-tone mixer defaults, in case the effect
+                 * that just ended (e.g. SFX_SIREN) opted into the
+                 * AY-style mixer/shared envelope - otherwise a later,
+                 * unrelated effect on this voice would inherit them. */
+                sid_voice[1].use_ay_env   = 0;
+                sid_voice[1].tone_enable  = 1;
+                sid_voice[1].noise_enable = 0;
+                sid_voice[1].releasing    = 1;
                 sfx_current = SFX_NONE;
             }
         }
@@ -217,6 +322,18 @@ static void sfx_update_tick(void)
             v->freq  = 200 + (((sfx_param >> 16) & 0xFF) * 15);
             break;
 
+        case SFX_SIREN: {
+            /* Triangle-sweep the tone between two pitches for the
+             * classic wailing-siren shape, layered on top of the
+             * AY-style tone+noise mixer and the shared envelope's
+             * tremolo (both set up once in sfx_play()'s SFX_SIREN
+             * case, not touched again here). */
+            sfx_param++;
+            uint32_t t = sfx_param % 600;
+            v->freq = (uint16_t)((t < 300) ? (300 + t) : (950 - t));
+            break;
+        }
+
         default:
             break;
         }
@@ -224,6 +341,7 @@ static void sfx_update_tick(void)
 
     for (int i = 0; i < SID_VOICES; i++)
         envelope_tick(&sid_voice[i]);
+    ay_envelope_tick();
 
     /* Musik-Timing */
     music_update_1ms();
@@ -250,43 +368,83 @@ static void sid_update(void)
         sfx_update_tick();
     }
 
+    /* Shared noise generator: its own period-controlled phase
+     * accumulator (see sfx_set_noise_period()), advanced unconditionally
+     * every sample regardless of which voices (if any) mix it in, so its
+     * timing doesn't depend on who's listening. */
+    ay_noise_phase += ay_noise_step;
+    if (ay_noise_phase >= SID_PHASE_MAX) {
+        ay_noise_phase -= SID_PHASE_MAX;
+        ay_noise_lfsr = (ay_noise_lfsr >> 1) ^ (-(ay_noise_lfsr & 1u) & 0xB400u);
+        ay_noise_bit  = (uint8_t)(ay_noise_lfsr & 1u);
+    }
+
     int32_t mix = 0;
     int any_active = 0;
 
     for (int i = 0; i < SID_VOICES; i++) {
         SidVoice *v = &sid_voice[i];
-        if (!v->active || v->env == 0 || v->freq == 0) {
+        if (!v->active || v->env == 0)
             continue;
-        }
 
-        any_active = 1;
-
-        /* step = freq * SID_PHASE_MAX / SID_SAMPLE_RATE, done as a 32x32
-         * multiply + shift (native UMULL) instead of a runtime 64-bit
-         * division - see SID_STEP_PER_HZ_Q16 above. */
-        uint32_t step = (uint32_t)(((uint64_t)v->freq * SID_STEP_PER_HZ_Q16) >> 16);
-        v->phase += step;
-
-        uint8_t sample = 0;
+        uint8_t sample = 128;
+        int contributed = 0;
 
         switch (v->wave) {
         case SID_WAVE_SQUARE: {
-            /* Variable duty cycle (v->pw) instead of a fixed 50% split -
-             * lets effects/voices sweep their timbre, not just pitch. */
-            uint16_t ph16 = (uint16_t)(v->phase >> 8);
-            sample = (ph16 < v->pw) ? 0 : 255;
+            /* AY-3-8910-style mixer: tone_enable/noise_enable each
+             * default to plain tone-only (see sfx_set_mixer()), so this
+             * reduces to the exact old square-wave behavior unless a
+             * caller opts into noise. When both are enabled, the real
+             * chip's tone and noise bits are gated together (AND) - the
+             * channel is only "on" where both are - rather than simply
+             * added. */
+            uint8_t tone_bit = 1, noise_bit = 1;
+
+            if (v->tone_enable && v->freq != 0) {
+                /* step = freq * SID_PHASE_MAX / SID_SAMPLE_RATE, done as
+                 * a 32x32 multiply + shift (native UMULL) instead of a
+                 * runtime 64-bit division - see SID_STEP_PER_HZ_Q16. */
+                uint32_t step = (uint32_t)(((uint64_t)v->freq * SID_STEP_PER_HZ_Q16) >> 16);
+                v->phase += step;
+                /* Variable duty cycle (v->pw) instead of a fixed 50%
+                 * split - lets effects/voices sweep their timbre, not
+                 * just pitch. */
+                uint16_t ph16 = (uint16_t)(v->phase >> 8);
+                tone_bit = (ph16 < v->pw) ? 0 : 1;
+                contributed = 1;
+            }
+            if (v->noise_enable) {
+                noise_bit = ay_noise_bit;
+                contributed = 1;
+            }
+            if (contributed)
+                sample = (tone_bit & noise_bit) ? 255 : 0;
             break;
         }
         case SID_WAVE_TRIANGLE:
-            sample = (v->phase >> 16) ^ ((v->phase >> 23) ? 0xFF : 0x00);
+            if (v->freq != 0) {
+                uint32_t step = (uint32_t)(((uint64_t)v->freq * SID_STEP_PER_HZ_Q16) >> 16);
+                v->phase += step;
+                sample = (v->phase >> 16) ^ ((v->phase >> 23) ? 0xFF : 0x00);
+                contributed = 1;
+            }
             break;
         case SID_WAVE_NOISE:
-            sid_noise_lfsr = (sid_noise_lfsr >> 1) ^ (-(sid_noise_lfsr & 1u) & 0xB400u);
-            sample = sid_noise_lfsr & 0xFF;
+            if (v->freq != 0) {
+                sid_noise_lfsr = (sid_noise_lfsr >> 1) ^ (-(sid_noise_lfsr & 1u) & 0xB400u);
+                sample = sid_noise_lfsr & 0xFF;
+                contributed = 1;
+            }
             break;
         }
 
-        /* v->env (not v->volume) drives the mix - see envelope_tick(). */
+        if (!contributed)
+            continue;
+
+        any_active = 1;
+        /* v->env (not v->volume) drives the mix - see envelope_tick()/
+         * ay_envelope_tick(). */
         mix += (int32_t)(sample - 128) * v->env;
     }
 
@@ -425,6 +583,26 @@ void sfx_play(SfxType type)
         sfx_time_left_ms = 120;
         break;
 
+    case SFX_SIREN:
+        /* Classic AY-style wailing alarm: a pitch-swept square tone
+         * (see sfx_update_tick()'s SFX_SIREN case) AND-gated with the
+         * shared noise generator for a buzzy edge, with the shared
+         * envelope generator driving a triangle tremolo on top instead
+         * of this voice's usual single attack/release fade - all three
+         * AY-3-8910-style extensions (mixer, noise period, envelope)
+         * in one effect, in place of using them separately. */
+        v->wave   = SID_WAVE_SQUARE;
+        v->volume = 130;
+        v->freq   = 300;
+        v->active = 1;
+        sfx_param = 0;
+        sfx_time_left_ms = 1200;
+        sfx_set_mixer(1, 1, 1);
+        sfx_set_noise_period(300);
+        sfx_set_envelope(SFX_ENV_TRIANGLE, 12);
+        sfx_voice_use_envelope(1, 1);
+        break;
+
     default:
         sfx_stop();
         break;
@@ -438,13 +616,60 @@ void sfx_play(SfxType type)
 void sfx_stop(void)
 {
     for (int i = 0; i < SID_VOICES; i++) {
-        sid_voice[i].active    = 0;
-        sid_voice[i].freq      = 0;
-        sid_voice[i].volume    = 0;
-        sid_voice[i].env       = 0;
-        sid_voice[i].releasing = 0;
+        sid_voice[i].active       = 0;
+        sid_voice[i].freq         = 0;
+        sid_voice[i].volume       = 0;
+        sid_voice[i].env          = 0;
+        sid_voice[i].releasing    = 0;
+        sid_voice[i].tone_enable  = 1;
+        sid_voice[i].noise_enable = 0;
+        sid_voice[i].use_ay_env   = 0;
     }
     sfx_current      = SFX_NONE;
     sfx_time_left_ms = 0;
     sfx_param        = 0;
+
+    ay_env_shape   = SFX_ENV_NONE;
+    ay_env_level   = 0;
+    ay_env_counter = 0;
+    ay_env_dir     = 1;
+}
+
+/* ---------------------------------------------------------
+ * AY-3-8910-style extensions (see sfx.h for the full contract of each)
+ * --------------------------------------------------------- */
+
+/** @brief See sfx_set_noise_period() in the header for the full contract. */
+void sfx_set_noise_period(uint16_t period_hz)
+{
+    ay_noise_step = (uint32_t)(((uint64_t)period_hz * SID_STEP_PER_HZ_Q16) >> 16);
+}
+
+/** @brief See sfx_set_mixer() in the header for the full contract. */
+void sfx_set_mixer(int voice, int tone_enable, int noise_enable)
+{
+    if (voice < 0 || voice >= SID_VOICES)
+        return;
+
+    sid_voice[voice].tone_enable  = (uint8_t)(tone_enable != 0);
+    sid_voice[voice].noise_enable = (uint8_t)(noise_enable != 0);
+}
+
+/** @brief See sfx_set_envelope() in the header for the full contract. */
+void sfx_set_envelope(SfxEnvShape shape, uint16_t rate_ms)
+{
+    ay_env_shape   = shape;
+    ay_env_rate_ms = (rate_ms == 0) ? 1 : rate_ms;
+    ay_env_counter = 0;
+    ay_env_dir     = 1;
+    ay_env_level   = (shape == SFX_ENV_FADE_OUT) ? 15 : 0;
+}
+
+/** @brief See sfx_voice_use_envelope() in the header for the full contract. */
+void sfx_voice_use_envelope(int voice, int enable)
+{
+    if (voice < 0 || voice >= SID_VOICES)
+        return;
+
+    sid_voice[voice].use_ay_env = (uint8_t)(enable != 0);
 }
