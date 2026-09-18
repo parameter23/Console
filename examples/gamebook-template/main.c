@@ -31,8 +31,8 @@
  *
  * Controls: UP/DOWN move the menu cursor, BTN confirms.
  *
- * The on-screen font only covers ASCII 32..127 (see font8x8.c), so all
- * German text here is written without umlauts/ß (UE/OE/AE/SS).
+ * The on-screen font (see font8x8.c) covers full Code Page 850, and
+ * draw_text() decodes UTF-8, so German umlauts/ß can be written directly.
  */
 #include "game.h"
 #include "framebuffer8.h"
@@ -218,7 +218,7 @@ static int apply_damage(int dmg, const char *reason)
     hero.lp -= dmg;
     if (hero.lp <= 0) {
         hero.lp = 0;
-        str_copy(display_text, reason ? reason : "Deine Kraft verlaesst dich...", sizeof(display_text));
+        str_copy(display_text, reason ? reason : "Deine Kraft verlässt dich...", sizeof(display_text));
         goto_scene(SCENE_END_LOSE);
         return 1;
     }
@@ -383,7 +383,7 @@ static void do_combat_action(int action)
         int dp = 0;
         append(death_msg, &dp, "Der ");
         append(death_msg, &dp, e->name);
-        append(death_msg, &dp, " ueberwaeltigt dich im Kampf.");
+        append(death_msg, &dp, " überwältigt dich im Kampf.");
         death_msg[dp] = 0;
 
         if (apply_damage(edmg, death_msg))

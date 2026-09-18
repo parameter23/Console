@@ -2,9 +2,8 @@
  * @file story.c
  * @brief Content for Die Nebelkrone (see story.h for the data format).
  *
- * The on-screen font only covers ASCII 32..127 (see font8x8.c), so all
- * text here is written without umlauts/ß (UE/OE/AE/SS), as in every
- * other German-language example in this repo.
+ * The on-screen font (see font8x8.c) covers full Code Page 850, and
+ * draw_text() decodes UTF-8, so German umlauts/ß can be written directly.
  */
 #include "story.h"
 
@@ -19,24 +18,24 @@ const Scene scenes[SCENE_COUNT] = {
     [SCENE_INTRO] = {
         .kind = NODE_TEXT,
         .bg = BG_VILLAGE,
-        .text = "Nebel waelzt sich durch die Gassen von Aschwald. Die "
+        .text = "Nebel wälzt sich durch die Gassen von Aschwald. Die "
                 "Ernte ist verfault, seit man die Nebelkrone aus der "
-                "Dorfmitte stahl. Die Leute wirken aengstlich und "
-                "huten sich, hinauszugehen.",
+                "Dorfmitte stahl. Die Leute wirken ängstlich und "
+                "hüten sich, hinauszugehen.",
         .enter_sfx = SFX_NONE,
         .grant_flag = -1,
         .penalty_req_flag = -1,
         .num_choices = 2,
-        .choice_text = { "Zum Dorfaeltesten gehen", "Sofort in den Sumpf aufbrechen" },
+        .choice_text = { "Zum Dorfältesten gehen", "Sofort in den Sumpf aufbrechen" },
         .choice_target = { SCENE_ELDER, SCENE_CHECK_MARSH },
     },
 
     [SCENE_ELDER] = {
         .kind = NODE_TEXT,
         .bg = BG_VILLAGE,
-        .text = "Der Aeltester drueckt dir eine Fackel in die Hand. "
+        .text = "Der Älteste drückt dir eine Fackel in die Hand. "
                 "\"Ein Moorschrat hat die Krone gestohlen und sich in "
-                "den alten Wachturm im Sumpf zurueckgezogen. Nimm die "
+                "den alten Wachturm im Sumpf zurückgezogen. Nimm die "
                 "Fackel - im Turm ist es finster.\"",
         .enter_sfx = SFX_PICKUP,
         .grant_flag = FLAG_TORCH,
@@ -64,21 +63,21 @@ const Scene scenes[SCENE_COUNT] = {
     [SCENE_TOWER_BASE] = {
         .kind = NODE_TEXT,
         .bg = BG_RUIN,
-        .text = "Vor dir ragt der eingestuerzte Wachturm aus dem Nebel. "
-                "Die Haupttuer ist verkeilt, doch seitlich im Gemaeuer "
+        .text = "Vor dir ragt der eingestürzte Wachturm aus dem Nebel. "
+                "Die Haupttür ist verkeilt, doch seitlich im Gemäuer "
                 "erahnst du einen schmalen Spalt.",
         .enter_sfx = SFX_NONE,
         .grant_flag = -1,
         .penalty_req_flag = -1,
         .num_choices = 2,
-        .choice_text = { "Die Tuer aufbrechen", "Den Spalt untersuchen" },
+        .choice_text = { "Die Tür aufbrechen", "Den Spalt untersuchen" },
         .choice_target = { SCENE_CHECK_DOOR, SCENE_CHECK_SEARCH },
     },
 
     [SCENE_CHECK_DOOR] = {
         .kind = NODE_CHECK,
         .bg = BG_RUIN,
-        .text = "Du stemmst dich mit aller Kraft gegen die morsche Tuer.",
+        .text = "Du stemmst dich mit aller Kraft gegen die morsche Tür.",
         .enter_sfx = SFX_NONE,
         .grant_flag = -1,
         .penalty_req_flag = -1,
@@ -86,7 +85,7 @@ const Scene scenes[SCENE_COUNT] = {
         .check_pass_target = SCENE_TOWER_INSIDE,
         .check_fail_target = SCENE_TOWER_INSIDE,
         .check_fail_damage = 3,
-        .check_fail_reason = "Splitter der brechenden Tuer reissen dir eine tiefe Wunde.",
+        .check_fail_reason = "Splitter der brechenden Tür reissen dir eine tiefe Wunde.",
     },
 
     [SCENE_CHECK_SEARCH] = {
@@ -108,7 +107,7 @@ const Scene scenes[SCENE_COUNT] = {
         .kind = NODE_TEXT,
         .bg = BG_RUIN_INSIDE,
         .text = "Drinnen riecht es nach nassem Stein und Moder. Ein "
-                "Gang fuehrt tiefer hinein, der Boden aus morschen "
+                "Gang führt tiefer hinein, der Boden aus morschen "
                 "Brettern knarrt bei jedem Schritt.",
         .enter_sfx = SFX_NONE,
         .grant_flag = -1,
@@ -131,28 +130,28 @@ const Scene scenes[SCENE_COUNT] = {
         .check_pass_target = SCENE_TOWER_UPPER,
         .check_fail_target = SCENE_TOWER_UPPER,
         .check_fail_damage = 4,
-        .check_fail_reason = "Die morschen Bretter brechen, du stuerzt hart auf den Steinboden darunter.",
+        .check_fail_reason = "Die morschen Bretter brechen, du stürzt hart auf den Steinboden darunter.",
     },
 
     [SCENE_TOWER_UPPER] = {
         .kind = NODE_TEXT,
         .bg = BG_RUIN_CHAMBER,
         .text = "Eine runde Kammer mit einer alten Truhe an der Wand. "
-                "Eine steile Treppe fuehrt weiter hinauf, von dort hoerst "
+                "Eine steile Treppe führt weiter hinauf, von dort hörst "
                 "du ein tiefes Knurren.",
         .enter_sfx = SFX_NONE,
         .grant_flag = -1,
         .penalty_req_flag = -1,
         .num_choices = 2,
-        .choice_text = { "Die Truhe oeffnen", "Sofort nach oben gehen" },
+        .choice_text = { "Die Truhe öffnen", "Sofort nach oben gehen" },
         .choice_target = { SCENE_CHEST, SCENE_TOWER_TOP },
     },
 
     [SCENE_CHEST] = {
         .kind = NODE_TEXT,
         .bg = BG_RUIN_CHAMBER,
-        .text = "In der Truhe findest du ein kleines Flaeschchen mit "
-                "schimmernder Fluessigkeit - ein Heiltrank. Du steckst "
+        .text = "In der Truhe findest du ein kleines Fläschchen mit "
+                "schimmernder Flüssigkeit - ein Heiltrank. Du steckst "
                 "ihn ein.",
         .enter_sfx = SFX_PICKUP,
         .grant_flag = FLAG_POTION,
@@ -165,8 +164,8 @@ const Scene scenes[SCENE_COUNT] = {
     [SCENE_TOWER_TOP] = {
         .kind = NODE_COMBAT,
         .bg = BG_RUIN_TOP_FIGHT,
-        .text = "Oben kauert der Moorschrat ueber der gestohlenen "
-                "Nebelkrone. Er faucht und stuerzt sich auf dich!",
+        .text = "Oben kauert der Moorschrat über der gestohlenen "
+                "Nebelkrone. Er faucht und stürzt sich auf dich!",
         .enter_sfx = SFX_NONE,
         .grant_flag = -1,
         .penalty_req_flag = -1,
@@ -192,8 +191,8 @@ const Scene scenes[SCENE_COUNT] = {
     [SCENE_CHECK_ESCAPE] = {
         .kind = NODE_CHECK,
         .bg = BG_RUIN_TOP_WON,
-        .text = "Steine loesen sich aus der Decke. Du hetzt die "
-                "einstuerzende Treppe hinunter.",
+        .text = "Steine lösen sich aus der Decke. Du hetzt die "
+                "einstürzende Treppe hinunter.",
         .enter_sfx = SFX_NONE,
         .grant_flag = -1,
         .penalty_req_flag = -1,
@@ -201,7 +200,7 @@ const Scene scenes[SCENE_COUNT] = {
         .check_pass_target = SCENE_END_WIN,
         .check_fail_target = SCENE_END_WIN,
         .check_fail_damage = 5,
-        .check_fail_reason = "Ein stuerzender Deckenbalken erwischt dich beim Sprung aus dem Turm.",
+        .check_fail_reason = "Ein stürzender Deckenbalken erwischt dich beim Sprung aus dem Turm.",
     },
 
     [SCENE_END_WIN] = {

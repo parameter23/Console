@@ -22,8 +22,8 @@
  *
  * Controls: UP/DOWN move the menu cursor, BTN confirms.
  *
- * The on-screen font only covers ASCII 32..127 (see font8x8.c), so all
- * German text here is written without umlauts/ß (UE/OE/AE/SS).
+ * The on-screen font (see font8x8.c) covers full Code Page 850, and
+ * draw_text() decodes UTF-8, so German umlauts/ß can be written directly.
  */
 #include "game.h"
 #include "framebuffer8.h"

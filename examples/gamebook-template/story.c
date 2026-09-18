@@ -9,9 +9,9 @@
  *        story.c for what a full ~15-scene adventure built the same way
  *        looks like.
  *
- * The on-screen font only covers ASCII 32..127 (see font8x8.c), so all
- * German text here is written without umlauts/ß (UE/OE/AE/SS) - keep
- * doing that in your own text too.
+ * The on-screen font (see font8x8.c) covers full Code Page 850, and
+ * draw_text() decodes UTF-8, so German umlauts/ß can be written directly
+ * (as below) - no ASCII substitution (UE/OE/AE/SS) needed.
  */
 #include "story.h"
 
@@ -39,7 +39,7 @@ const Scene scenes[SCENE_COUNT] = {
     [SCENE_CHECK_EXAMPLE] = {
         .kind = NODE_CHECK,
         .bg = BG_SWAMP,
-        .text = "Eine Beispiel-Probe: hier koennte eine gefaehrliche "
+        .text = "Eine Beispiel-Probe: hier könnte eine gefährliche "
                 "Stelle im Weg liegen.",
         .enter_sfx = SFX_NONE,
         .grant_flag = -1,
@@ -66,7 +66,7 @@ const Scene scenes[SCENE_COUNT] = {
     [SCENE_ITEM_EXAMPLE] = {
         .kind = NODE_TEXT,
         .bg = BG_RUIN_CHAMBER,
-        .text = "Du findest einen Heiltrank - ein Beispiel fuer eine "
+        .text = "Du findest einen Heiltrank - ein Beispiel für eine "
                 "Gegenstands-Vergabe.",
         .enter_sfx = SFX_PICKUP,
         .grant_flag = FLAG_HEAL_ITEM,
