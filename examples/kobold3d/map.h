@@ -19,15 +19,8 @@
 #define FOREST_ORIGIN_X 2
 #define FOREST_ORIGIN_Y 4
 
-/** @brief 0 = open floor, 1..3 = wall type (index into wall_colors + 1).
- *         Only type 2 ("hedge") is actually used by this map. */
+/** @brief 0 = open floor, 1..3 = wall type. Only type 2 ("hedge") is
+ *         actually used by this map (see main.c's sample_wall_tex()). */
 extern const uint8_t world_map[MAP_H][MAP_W];
-
-/**
- * @brief Per-wall-type shading: [wall type - 1][side], side 0 = a N/S-facing
- *        wall face, side 1 = an E/W-facing face (same convention as
- *        examples/raycaster/map.h).
- */
-extern const uint8_t wall_colors[3][2];
 
 #endif

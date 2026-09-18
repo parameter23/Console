@@ -33,7 +33,6 @@
 
 #define CEILING_COLOR  14  /* light blue */
 #define FLOOR_COLOR     9  /* brown */
-#define MORTAR_COLOR   11  /* dark grey: grout/groove lines in wall textures */
 
 #define PLAYER_START_X  2.5f
 #define PLAYER_START_Y  1.5f
@@ -267,28 +266,89 @@ static void raycaster_update(const JoystickState *js, uint32_t tick_ms)
         hit_flash_ticks--;
 }
 
+/* clang-format off */
+/** @brief Wall type 1: brick, running-bond coursing (offset every other row). */
+static const uint8_t brick_tex[16][16] = {
+    { 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12 },
+    { 12,  9,  9,  9,  9,  9,  9,  9, 12, 10, 10, 10, 10, 10, 10, 10 },
+    { 12,  9,  9,  9,  9,  9,  9,  9, 12, 10, 10, 10, 10, 10, 10, 10 },
+    { 12,  9,  9,  9,  9,  9,  9,  9, 12, 10, 10, 10, 10, 10, 10, 10 },
+    { 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12 },
+    {  9,  9,  9,  9, 12, 10, 10, 10, 10, 10, 10, 10, 12,  9,  9,  9 },
+    {  9,  9,  9,  9, 12, 10, 10, 10, 10, 10, 10, 10, 12,  9,  9,  9 },
+    {  9,  9,  9,  9, 12, 10, 10, 10, 10, 10, 10, 10, 12,  9,  9,  9 },
+    { 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12 },
+    { 12,  9,  9,  9,  9,  9,  9,  9, 12, 10, 10, 10, 10, 10, 10, 10 },
+    { 12,  9,  9,  9,  9,  9,  9,  9, 12, 10, 10, 10, 10, 10, 10, 10 },
+    { 12,  9,  9,  9,  9,  9,  9,  9, 12, 10, 10, 10, 10, 10, 10, 10 },
+    { 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12 },
+    {  9,  9,  9,  9, 12, 10, 10, 10, 10, 10, 10, 10, 12,  9,  9,  9 },
+    {  9,  9,  9,  9, 12, 10, 10, 10, 10, 10, 10, 10, 12,  9,  9,  9 },
+    {  9,  9,  9,  9, 12, 10, 10, 10, 10, 10, 10, 10, 12,  9,  9,  9 },
+};
+
+/** @brief Wall type 2: large stone blocks in a 2x2 grid per tile. */
+static const uint8_t stone_tex[16][16] = {
+    { 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11 },
+    { 11, 15, 15, 15, 15, 15, 15, 15, 11, 12, 12, 12, 12, 12, 12, 12 },
+    { 11, 15, 15, 15, 15, 15, 15, 15, 11, 12, 12, 12, 12, 12, 12, 12 },
+    { 11, 15, 15, 15, 15, 15, 15, 15, 11, 12, 12, 12, 12, 12, 12, 12 },
+    { 11, 15, 15, 15, 15, 15, 15, 15, 11, 12, 12, 12, 12, 12, 12, 12 },
+    { 11, 15, 15, 15, 15, 15, 15, 15, 11, 12, 12, 12, 12, 12, 12, 12 },
+    { 11, 15, 15, 15, 15, 15, 15, 15, 11, 12, 12, 12, 12, 12, 12, 12 },
+    { 11, 15, 15, 15, 15, 15, 15, 15, 11, 12, 12, 12, 12, 12, 12, 12 },
+    { 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11 },
+    { 11, 12, 12, 12, 12, 12, 12, 12, 11, 15, 15, 15, 15, 15, 15, 15 },
+    { 11, 12, 12, 12, 12, 12, 12, 12, 11, 15, 15, 15, 15, 15, 15, 15 },
+    { 11, 12, 12, 12, 12, 12, 12, 12, 11, 15, 15, 15, 15, 15, 15, 15 },
+    { 11, 12, 12, 12, 12, 12, 12, 12, 11, 15, 15, 15, 15, 15, 15, 15 },
+    { 11, 12, 12, 12, 12, 12, 12, 12, 11, 15, 15, 15, 15, 15, 15, 15 },
+    { 11, 12, 12, 12, 12, 12, 12, 12, 11, 15, 15, 15, 15, 15, 15, 15 },
+    { 11, 12, 12, 12, 12, 12, 12, 12, 11, 15, 15, 15, 15, 15, 15, 15 },
+};
+
+/** @brief Wall type 3: vertical wood planks with alternating grain shade. */
+static const uint8_t wood_tex[16][16] = {
+    { 0, 8, 8, 8, 0, 9, 9, 9, 0, 8, 8, 8, 0, 9, 9, 9 },
+    { 0, 9, 9, 9, 0, 8, 8, 8, 0, 9, 9, 9, 0, 8, 8, 8 },
+    { 0, 9, 9, 9, 0, 8, 8, 8, 0, 9, 9, 9, 0, 8, 8, 8 },
+    { 0, 9, 9, 9, 0, 8, 8, 8, 0, 9, 9, 9, 0, 8, 8, 8 },
+    { 0, 9, 9, 9, 0, 8, 8, 8, 0, 9, 9, 9, 0, 8, 8, 8 },
+    { 0, 8, 8, 8, 0, 9, 9, 9, 0, 8, 8, 8, 0, 9, 9, 9 },
+    { 0, 9, 9, 9, 0, 8, 8, 8, 0, 9, 9, 9, 0, 8, 8, 8 },
+    { 0, 9, 9, 9, 0, 8, 8, 8, 0, 9, 9, 9, 0, 8, 8, 8 },
+    { 0, 9, 9, 9, 0, 8, 8, 8, 0, 9, 9, 9, 0, 8, 8, 8 },
+    { 0, 9, 9, 9, 0, 8, 8, 8, 0, 9, 9, 9, 0, 8, 8, 8 },
+    { 0, 8, 8, 8, 0, 9, 9, 9, 0, 8, 8, 8, 0, 9, 9, 9 },
+    { 0, 9, 9, 9, 0, 8, 8, 8, 0, 9, 9, 9, 0, 8, 8, 8 },
+    { 0, 9, 9, 9, 0, 8, 8, 8, 0, 9, 9, 9, 0, 8, 8, 8 },
+    { 0, 9, 9, 9, 0, 8, 8, 8, 0, 9, 9, 9, 0, 8, 8, 8 },
+    { 0, 9, 9, 9, 0, 8, 8, 8, 0, 9, 9, 9, 0, 8, 8, 8 },
+    { 0, 8, 8, 8, 0, 9, 9, 9, 0, 8, 8, 8, 0, 9, 9, 9 },
+};
+/* clang-format on */
+
 /**
- * @brief Procedural wall texture: given a wall type and a texel coordinate
- *        (0..15 each), decides whether that texel is a "grout/mortar" line
- *        vs. the base fill color - a cheap real-time pattern instead of a
- *        stored bitmap, distinct per wall type so walls actually look
- *        textured rather than flat-shaded.
+ * @brief One-step-darker palette index for each of the 16 base colors -
+ *        applied to every texel on an E/W-facing wall so the same bitmap
+ *        still gives the classic two-tone side shading instead of reading
+ *        flat regardless of orientation. Colors with no darker relative in
+ *        the 16-entry base palette (e.g. pure hues with only one shade)
+ *        fall back to black.
  */
-static int is_mortar(int cell_type, int tex_x, int tex_y)
+static const uint8_t shade_dark[16] = {
+     0, 15,  9,  6,  0,  0,  0,  8,
+     9,  0,  2,  0, 11,  5,  6, 12,
+};
+
+static uint8_t sample_wall_tex(int cell_type, int tex_x, int tex_y)
 {
-    if (cell_type == 1) {
-        /* Brick coursing: a mortar line every 4 rows, offset by half a
-         * brick every other course. */
-        if (tex_y % 4 == 0)
-            return 1;
-        int course_offset = ((tex_y / 4) % 2) * 4;
-        return ((tex_x + course_offset) % 8) == 0;
+    switch (cell_type) {
+    case 1:  return brick_tex[tex_y][tex_x];
+    case 2:  return stone_tex[tex_y][tex_x];
+    case 3:  return wood_tex[tex_y][tex_x];
+    default: return 0;
     }
-    if (cell_type == 2)
-        return (tex_x % 8 == 0) || (tex_y % 8 == 0);  /* large stone blocks */
-    if (cell_type == 3)
-        return (tex_x % 4 == 0);  /* vertical wood planks */
-    return 0;
 }
 
 /** @brief Casts one column's ray and draws its wall strip. */
@@ -394,13 +454,12 @@ static void cast_column(int x)
     float tex_step = 16.0f / (float)line_height;
     float tex_pos = (float)(draw_start - draw_start_raw) * tex_step;
 
-    uint8_t fill_color = wall_colors[cell_type - 1][side];
-
     for (int y = draw_start; y <= draw_end; y++) {
         int tex_y = ((int)tex_pos) & 15;
         tex_pos += tex_step;
 
-        uint8_t color = is_mortar(cell_type, tex_x, tex_y) ? MORTAR_COLOR : fill_color;
+        uint8_t texel = sample_wall_tex(cell_type, tex_x, tex_y);
+        uint8_t color = (side == 1) ? shade_dark[texel] : texel;
         /* Direct write, not fb8_set_pixel(): x/y are already known in-bounds
          * from the clamps above, same trade-off fb8_fill_rect() makes. */
         framebuffer8[y * FB8_WIDTH + x] = color;

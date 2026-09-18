@@ -40,7 +40,6 @@
 
 #define CEILING_COLOR  14  /* light blue */
 #define FLOOR_COLOR     9  /* brown */
-#define MORTAR_COLOR   11  /* dark grey: grout lines in the hedge texture */
 
 #define ENTRANCE_X 1
 #define ENTRANCE_Y 0
@@ -527,24 +526,40 @@ static void game_update(const JoystickState *js, uint32_t tick_ms)
     }
 }
 
-/**
- * @brief Procedural wall texture (see examples/raycaster/main.c's
- *        is_mortar() - identical algorithm, only the hedge pattern
- *        (type 2) is actually reachable on this map).
- */
-static int is_mortar(int cell_type, int tex_x, int tex_y)
+/** @brief Wall type 2: the only wall type this map uses - a mottled hedge
+ *         of leaves, deterministic pseudo-noise instead of a hand-placed
+ *         pattern (a real grid pattern like raycaster's brick/stone reads
+ *         as masonry, not foliage). */
+static const uint8_t hedge_tex[16][16] = {
+    {  0,  5, 13,  5, 13, 13,  5,  0, 13,  0, 13,  0,  5, 13,  0, 13 },
+    { 13,  5, 13, 13,  5,  0, 13,  0, 13,  0,  5, 13,  0, 13,  5, 13 },
+    { 13, 13,  5, 13, 13,  0, 13,  5,  5, 13,  0,  5,  5, 13,  0,  0 },
+    {  5, 13, 13,  0, 13,  5,  5, 13,  5,  5,  5, 13,  0,  0, 13,  5 },
+    { 13, 13, 13,  5,  5, 13,  5,  5,  5,  5,  0,  0, 13,  0, 13,  5 },
+    { 13,  5, 13, 13,  5,  5,  5,  5,  0,  0, 13,  0, 13,  5, 13,  5 },
+    { 13, 13,  5, 13,  5,  5,  0,  5, 13,  0, 13,  5, 13,  5, 13,  0 },
+    {  5, 13,  5,  5, 13,  5, 13,  0, 13,  5, 13,  5, 13,  0, 13,  5 },
+    {  5, 13, 13,  5, 13, 13, 13,  5, 13,  5, 13,  0, 13, 13, 13, 13 },
+    { 13,  5, 13, 13, 13,  5, 13,  5, 13,  0, 13, 13, 13, 13,  5, 13 },
+    { 13, 13, 13,  5, 13,  5, 13,  5, 13, 13, 13,  5,  5, 13,  5,  0 },
+    {  5,  5, 13,  5, 13,  5, 13, 13,  5,  5,  5, 13,  5,  0,  0,  5 },
+    { 13,  5, 13,  5, 13,  5,  5,  5,  5, 13,  5,  0,  0,  5, 13,  5 },
+    { 13,  5, 13,  5,  5,  5,  5, 13,  5,  0, 13,  5, 13,  5,  5,  5 },
+    { 13,  5,  5, 13,  5, 13,  5, 13, 13,  5, 13, 13,  5,  5,  0,  5 },
+    {  5, 13,  5, 13,  5, 13, 13,  5, 13, 13,  5,  5, 13,  5,  5, 13 },
+};
+
+/** @brief Same one-step-darker table as examples/raycaster/main.c, for
+ *         E/W-facing hedge faces. */
+static const uint8_t shade_dark[16] = {
+     0, 15,  9,  6,  0,  0,  0,  8,
+     9,  0,  2,  0, 11,  5,  6, 12,
+};
+
+static uint8_t sample_wall_tex(int cell_type, int tex_x, int tex_y)
 {
-    if (cell_type == 1) {
-        if (tex_y % 4 == 0)
-            return 1;
-        int course_offset = ((tex_y / 4) % 2) * 4;
-        return ((tex_x + course_offset) % 8) == 0;
-    }
-    if (cell_type == 2)
-        return (tex_x % 8 == 0) || (tex_y % 8 == 0);  /* trimmed hedge blocks */
-    if (cell_type == 3)
-        return (tex_x % 4 == 0);
-    return 0;
+    (void)cell_type;  /* only type 2 (hedge) is reachable on this map */
+    return hedge_tex[tex_y][tex_x];
 }
 
 /** @brief Casts one column's ray and draws its textured wall strip. */
@@ -631,13 +646,12 @@ static void cast_column(int x)
     float tex_step = 16.0f / (float)line_height;
     float tex_pos = (float)(draw_start - draw_start_raw) * tex_step;
 
-    uint8_t fill_color = wall_colors[cell_type - 1][side];
-
     for (int y = draw_start; y <= draw_end; y++) {
         int tex_y = ((int)tex_pos) & 15;
         tex_pos += tex_step;
 
-        uint8_t color = is_mortar(cell_type, tex_x, tex_y) ? MORTAR_COLOR : fill_color;
+        uint8_t texel = sample_wall_tex(cell_type, tex_x, tex_y);
+        uint8_t color = (side == 1) ? shade_dark[texel] : texel;
         framebuffer8[y * FB8_WIDTH + x] = color;
     }
 }
