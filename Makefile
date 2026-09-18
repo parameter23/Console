@@ -5,7 +5,7 @@
 # the shared engine sources together with that example's own files. This
 # Makefile just delegates to the examples.
 # -----------------------------------------------------------------------------
-EXAMPLES = examples/dig-demo examples/scroller-demo examples/invaders examples/nebelkrone examples/gamebook-template examples/kobold examples/map-template examples/w25q128-test examples/flash-uploader examples/raycaster examples/kobold3d
+EXAMPLES = examples/scroller-demo examples/invaders examples/nebelkrone examples/gamebook-template examples/kobold examples/map-template examples/w25q128-test examples/flash-uploader examples/raycaster examples/kobold3d examples/boulderdash
 
 .PHONY: all clean flash docs docs-clean
 
@@ -18,7 +18,7 @@ clean:
 # Flashes the first example by default; run `make -C examples/<name> flash`
 # to flash a specific one.
 flash:
-	$(MAKE) -C examples/dig-demo flash
+	$(MAKE) -C examples/scroller-demo flash
 
 docs:
 	doxygen Doxyfile
